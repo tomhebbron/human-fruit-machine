@@ -340,7 +340,17 @@
       font-size: 0.88rem;
     }
 
-    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; flex-shrink: 0; }
+    .tabs {
+      display: flex;
+      gap: 0.4rem;
+      margin-bottom: 1rem;
+      flex-shrink: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 2px;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
 
     .tab {
       background: var(--surface);
@@ -352,6 +362,7 @@
       font-size: 0.85rem;
       transition: all 0.15s;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .tab.active { background: var(--gold); color: #0f001f; border-color: var(--gold); font-weight: 700; }
@@ -603,7 +614,10 @@
   <div id="admin-screen" class="screen">
 
     <div id="admin-header">
-      <h2>⚙️ Admin Panel</h2>
+      <div style="display:flex;align-items:baseline;gap:0.5rem">
+        <h2>⚙️ Admin Panel</h2>
+        <span id="ver" style="font-size:0.62rem;color:var(--text-dim);opacity:0.55;letter-spacing:0.04em"></span>
+      </div>
       <button class="close-btn" id="close-admin">✕ Back to Game</button>
     </div>
 
@@ -773,6 +787,8 @@
 
 <script>
 'use strict';
+
+const VERSION = '2026-06-20.1';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1712,6 +1728,7 @@ document.getElementById('clear-history').addEventListener('click', () => {
 // Initial UI render
 updateUI();
 updatePrizeBoard();
+document.getElementById('ver').textContent = VERSION;
 
 // ═══════════════════════════════════════════════════════════════
 //  CUSTOM SFX  (IndexedDB persistence)
