@@ -524,6 +524,7 @@
     <header id="game-header">
       <div id="game-title">🎰 Human Fruit Machine</div>
       <button id="admin-btn" title="Admin Panel">⚙️</button>
+      <div id="ws-dot" title="ESP32 WebSocket" style="display:none;font-size:0.7rem;opacity:0.4">●</div>
     </header>
 
     <div id="reels">
@@ -1379,6 +1380,7 @@ function startSpin() {
 
   [0,1,2].forEach(startReelAnim);
   stopSpin = startSpinSound(cfg.volume);
+  sendToEsp32({ t: 'spin_start' });
 
   const sd = cfg.spinDuration;
   const rd = cfg.reelDelay;
@@ -1387,16 +1389,19 @@ function startSpin() {
     if (stopSpin) { stopSpin(); stopSpin = null; }
     lockReel(0, chosenReels[0]);
     playChing(cfg.volume);
+    sendToEsp32({ t: 'reel', n: 0 });
   }, sd);
 
   setTimeout(() => {
     lockReel(1, chosenReels[1]);
     playChing(cfg.volume);
+    sendToEsp32({ t: 'reel', n: 1 });
   }, sd + rd);
 
   setTimeout(() => {
     lockReel(2, chosenReels[2]);
     playChing(cfg.volume);
+    sendToEsp32({ t: 'reel', n: 2 });
 
     setTimeout(() => {
       const result = evaluate(chosenReels);
@@ -1406,6 +1411,7 @@ function startSpin() {
         won:  result.type !== 'none',
       });
       showBanner(result);
+      sendToEsp32({ t: 'result', type: result.type });
       if (result.type === 'jackpot')                        playJackpot(cfg.volume);
       else if (result.type === 'three' || result.type === 'two') playWin(cfg.volume);
       else                                                  playNoWin(cfg.volume);
@@ -1414,6 +1420,60 @@ function startSpin() {
     }, 600);
   }, sd + rd * 2);
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  ESP32 WEBSOCKET  (auto-active when page is served by ESP32)
+//  When loaded from HTTPS (GitHub Pages) this is a no-op.
+// ═══════════════════════════════════════════════════════════════
+const ESP32_WS_URL = window.location.protocol === 'http:'
+  ? `ws://${window.location.hostname}/ws`
+  : null;
+
+let _ws          = null;
+let _wsConnected = false;
+
+function _wsSetDot(on) {
+  const dot = document.getElementById('ws-dot');
+  if (!ESP32_WS_URL) return;
+  dot.style.display = 'block';
+  dot.style.opacity = on ? '1' : '0.25';
+  dot.style.color   = on ? 'var(--green)' : 'var(--text-dim)';
+  dot.title         = on ? 'ESP32 connected' : 'ESP32 connecting…';
+}
+
+function connectEsp32Ws() {
+  if (!ESP32_WS_URL) return;
+  try {
+    _ws = new WebSocket(ESP32_WS_URL);
+    _ws.onopen  = () => { _wsConnected = true;  _wsSetDot(true);  };
+    _ws.onclose = () => { _wsConnected = false; _wsSetDot(false); setTimeout(connectEsp32Ws, 2000); };
+    _ws.onerror = () => _ws.close();
+    _ws.onmessage = e => {
+      try {
+        const msg = JSON.parse(e.data);
+        switch (msg.t) {
+          case 'coin':    onCoin();            break;
+          case 'lever':   onLeverLevel(msg.n); break;
+          case 'release':
+            onLeverLevel(0);
+            // Small delay so level-0 processes before spin/ahem
+            setTimeout(() => msg.coin ? onSpace() : onAhem(), 60);
+            break;
+          case 'egg':
+            [eggParty, eggForceJackpot, eggCrowd][msg.n]?.();
+            break;
+        }
+      } catch(_) {}
+    };
+  } catch(_) {}
+}
+
+function sendToEsp32(obj) {
+  if (_wsConnected && _ws.readyState === WebSocket.OPEN)
+    _ws.send(JSON.stringify(obj));
+}
+
+connectEsp32Ws();  // no-op on GitHub Pages (http: check fails)
 
 // ═══════════════════════════════════════════════════════════════
 //  KEYBOARD HANDLER
