@@ -384,7 +384,7 @@
 
     input[type=range] { width: 100%; accent-color: var(--gold); cursor: pointer; }
 
-    input[type=text] {
+    input[type=text], input[type=number] {
       background: rgba(255,255,255,0.07);
       border: 1px solid rgba(255,255,255,0.18);
       color: var(--text);
@@ -513,6 +513,44 @@
     /* ── Party flash (Easter egg) ── */
     @keyframes party-hue { to { filter: hue-rotate(360deg) brightness(1.7); } }
     .party { animation: party-hue 0.4s linear 4; }
+
+    /* ── £1 a go badge ── */
+    #go-cost {
+      background: var(--gold);
+      color: #1a0d00;
+      font-weight: 900;
+      font-size: clamp(0.72rem, 2.5vw, 1rem);
+      padding: 0.25rem 0.65rem;
+      border-radius: 1rem;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Prize board ── */
+    #prize-board {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      padding: 0.3rem 0.55rem;
+      background: var(--surface);
+      border: 1px solid rgba(255,215,0,0.16);
+      border-radius: 0.6rem;
+    }
+
+    .pb-entry {
+      font-size: clamp(0.58rem, 1.7vw, 0.76rem);
+      padding: 0.1rem 0.42rem;
+      border-radius: 1rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      white-space: nowrap;
+    }
+
+    .pb-jackpot { border-color: rgba(255,215,0,0.45);  color: var(--gold);     background: rgba(255,215,0,0.07); }
+    .pb-three   { border-color: rgba(0,230,118,0.4);   color: var(--green);    background: rgba(0,230,118,0.05); }
+    .pb-two     { border-color: rgba(255,255,255,0.18); color: var(--text-dim); }
   </style>
 </head>
 <body>
@@ -523,9 +561,12 @@
 
     <header id="game-header">
       <div id="game-title">🎰 Human Fruit Machine</div>
+      <span id="go-cost">£1 a go</span>
       <button id="admin-btn" title="Admin Panel">⚙️</button>
       <div id="ws-dot" title="ESP32 WebSocket" style="display:none;font-size:0.7rem;opacity:0.4">●</div>
     </header>
+
+    <div id="prize-board"></div>
 
     <div id="reels">
       <div class="reel" id="reel-0">
@@ -642,6 +683,22 @@
           <div class="setting-row">
             <label>Jackpot (⭐ Lucky Star × 3)</label>
             <input type="text" id="s-prize-jackpot" value="TOP PRIZE — see the stall holder! 🏆">
+          </div>
+        </div>
+        <div class="setting-group">
+          <h4>Prize Costs (for profit tracking)</h4>
+          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem">What each prize costs the stall in pence — used to calculate profit in Stats. Entry is £1 per go.</p>
+          <div class="setting-row">
+            <label>Pair prize cost (p)</label>
+            <input type="number" id="s-pence-two" min="0" max="500" value="20">
+          </div>
+          <div class="setting-row">
+            <label>3-of-a-kind prize cost (p)</label>
+            <input type="number" id="s-pence-three" min="0" max="500" value="50">
+          </div>
+          <div class="setting-row">
+            <label>Jackpot prize cost (p)</label>
+            <input type="number" id="s-pence-jackpot" min="0" max="1000" value="200">
           </div>
         </div>
         <button class="save-btn" id="save-settings">Save Settings ✅</button>
@@ -823,15 +880,16 @@ const DEFAULTS = {
     three:   'Bag of sweets! 🍬',
     jackpot: 'TOP PRIZE — see the stall holder! 🏆',
   },
+  prizePence: { two: 20, three: 50, jackpot: 200 },
 };
 
 function loadCfg() {
   try {
     const raw = localStorage.getItem('hfm_cfg');
-    if (!raw) return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes } };
+    if (!raw) return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes }, prizePence: { ...DEFAULTS.prizePence } };
     const s = JSON.parse(raw);
-    return { ...DEFAULTS, ...s, prizes: { ...DEFAULTS.prizes, ...(s.prizes || {}) } };
-  } catch { return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes } }; }
+    return { ...DEFAULTS, ...s, prizes: { ...DEFAULTS.prizes, ...(s.prizes || {}) }, prizePence: { ...DEFAULTS.prizePence, ...(s.prizePence || {}) } };
+  } catch { return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes }, prizePence: { ...DEFAULTS.prizePence } }; }
 }
 
 function saveCfg(c) { localStorage.setItem('hfm_cfg', JSON.stringify(c)); }
@@ -1240,6 +1298,14 @@ function showBanner(result) {
 
 function hideBanner() { document.getElementById('prize-banner').className = ''; }
 
+function updatePrizeBoard() {
+  document.getElementById('prize-board').innerHTML = [
+    `<span class="pb-entry pb-jackpot">⭐×3 → ${cfg.prizes.jackpot}</span>`,
+    `<span class="pb-entry pb-three">3-of-a-kind → ${cfg.prizes.three}</span>`,
+    `<span class="pb-entry pb-two">Pair → ${cfg.prizes.two}</span>`,
+  ].join('');
+}
+
 // ── UI update ──
 function updateUI() {
   const btn   = document.getElementById('spin-btn');
@@ -1253,7 +1319,7 @@ function updateUI() {
       label.textContent = 'SPIN!';
       hint.textContent  = '';
       cs.className      = 'waiting';
-      cs.innerHTML      = '🪙 Insert coin to play';
+      cs.innerHTML      = '🪙 Insert £1 to play';
       break;
     case 'ready':
       btn.disabled      = false;
@@ -1528,6 +1594,13 @@ function buildStats() {
     return s;
   })();
 
+  const takingsPence = total * 100;
+  const prizesPence  = pairs  * (cfg.prizePence?.two     || 0)
+                     + threes * (cfg.prizePence?.three   || 0)
+                     + jacks  * (cfg.prizePence?.jackpot || 0);
+  const profitPence  = takingsPence - prizesPence;
+  const fmtMoney = p => '£' + (p / 100).toFixed(2);
+
   document.getElementById('stats-grid').innerHTML = [
     [total,    'Plays'],
     [rate+'%', 'Win Rate'],
@@ -1535,16 +1608,22 @@ function buildStats() {
     [threes,   '3-of-a-kind'],
     [jacks,    '⭐ Jackpots'],
     [streak,   'Loss Streak'],
+    [fmtMoney(takingsPence), 'Takings'],
+    [fmtMoney(prizesPence),  'Prizes Out'],
   ].map(([v,l]) =>
     `<div class="stat-card"><div class="stat-val">${v}</div><div class="stat-lbl">${l}</div></div>`
-  ).join('');
+  ).join('') + `<div class="stat-card" style="border-color:rgba(${profitPence>=0?'0,230,118':'255,80,80'},0.3)">
+    <div class="stat-val" style="color:${profitPence>=0?'var(--green)':'#ff7b7b'}">${fmtMoney(profitPence)}</div>
+    <div class="stat-lbl">${profitPence>=0?'Profit 🎉':'Loss 😬'}</div>
+  </div>`;
 
   document.getElementById('prize-breakdown').innerHTML = `
     <div class="breakdown-title">Prize Breakdown</div>
-    <div class="prize-row"><span>Pairs won</span><span>${pairs}</span></div>
-    <div class="prize-row"><span>3-of-a-kind won</span><span>${threes}</span></div>
-    <div class="prize-row"><span>Jackpots</span><span>${jacks}</span></div>
+    <div class="prize-row"><span>Pairs won</span><span>${pairs} × ${fmtMoney(cfg.prizePence?.two||0)} = ${fmtMoney(pairs*(cfg.prizePence?.two||0))}</span></div>
+    <div class="prize-row"><span>3-of-a-kind won</span><span>${threes} × ${fmtMoney(cfg.prizePence?.three||0)} = ${fmtMoney(threes*(cfg.prizePence?.three||0))}</span></div>
+    <div class="prize-row"><span>Jackpots</span><span>${jacks} × ${fmtMoney(cfg.prizePence?.jackpot||0)} = ${fmtMoney(jacks*(cfg.prizePence?.jackpot||0))}</span></div>
     <div class="prize-row"><span>No-wins</span><span>${total - wins}</span></div>
+    <div class="prize-row" style="font-weight:700;border-top:1px solid rgba(255,255,255,0.1);padding-top:0.5rem;margin-top:0.2rem"><span>Takings</span><span style="color:var(--gold)">${fmtMoney(takingsPence)} (${total} × £1)</span></div>
   `;
 }
 
@@ -1570,6 +1649,9 @@ function syncSettingsUI() {
   document.getElementById('s-prize-two').value     = cfg.prizes.two;
   document.getElementById('s-prize-three').value   = cfg.prizes.three;
   document.getElementById('s-prize-jackpot').value = cfg.prizes.jackpot;
+  document.getElementById('s-pence-two').value     = cfg.prizePence?.two     ?? 20;
+  document.getElementById('s-pence-three').value   = cfg.prizePence?.three   ?? 50;
+  document.getElementById('s-pence-jackpot').value = cfg.prizePence?.jackpot ?? 200;
   refreshLabels();
 }
 
@@ -1621,8 +1703,14 @@ document.getElementById('save-settings').addEventListener('click', () => {
       three:   document.getElementById('s-prize-three').value,
       jackpot: document.getElementById('s-prize-jackpot').value,
     },
+    prizePence: {
+      two:     parseInt(document.getElementById('s-pence-two').value)     || 0,
+      three:   parseInt(document.getElementById('s-pence-three').value)   || 0,
+      jackpot: parseInt(document.getElementById('s-pence-jackpot').value) || 0,
+    },
   };
   saveCfg(cfg);
+  updatePrizeBoard();
   const btn = document.getElementById('save-settings');
   btn.textContent = 'Saved! ✅';
   setTimeout(() => { btn.textContent = 'Save Settings ✅'; }, 1800);
@@ -1637,6 +1725,7 @@ document.getElementById('clear-history').addEventListener('click', () => {
 
 // Initial UI render
 updateUI();
+updatePrizeBoard();
 
 // ═══════════════════════════════════════════════════════════════
 //  CUSTOM SFX  (IndexedDB persistence)
