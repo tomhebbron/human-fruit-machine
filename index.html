@@ -493,6 +493,26 @@
       box-shadow: 0 4px 0 #005522, 0 0 28px rgba(0,230,118,0.65);
       color: #002210;
     }
+
+    /* ── Easter egg buttons (mobile bar) ── */
+    #mob-eggs { display: flex; flex-direction: column; gap: 0.45rem; justify-content: flex-end; }
+    .mob-egg-btn {
+      width: 48px; height: 48px; border-radius: 0.55rem;
+      border: 2px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.07);
+      color: white; font-size: 1.2rem;
+      cursor: pointer; touch-action: manipulation;
+      transition: transform 0.1s, background 0.1s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .mob-egg-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.18); }
+    .mob-egg-btn[data-egg="0"] { border-color: rgba(255,107,107,0.6); }
+    .mob-egg-btn[data-egg="1"] { border-color: rgba(255,215,0,0.6); }
+    .mob-egg-btn[data-egg="2"] { border-color: rgba(105,240,174,0.6); }
+
+    /* ── Party flash (Easter egg) ── */
+    @keyframes party-hue { to { filter: hue-rotate(360deg) brightness(1.7); } }
+    .party { animation: party-hue 0.4s linear 4; }
   </style>
 </head>
 <body>
@@ -564,6 +584,8 @@
       <button class="tab"        data-tab="settings">🔧 Settings</button>
       <button class="tab"        data-tab="history">📋 Log</button>
       <button class="tab"        data-tab="keys">⌨️ Keys</button>
+      <button class="tab"        data-tab="sfx">🔊 SFX</button>
+      <button class="tab"        data-tab="calibrate">🎲 Calibrate</button>
     </div>
 
     <div id="tab-stats" class="tab-panel active">
@@ -657,10 +679,37 @@
       </p>
     </div>
 
+    <div id="tab-sfx" class="tab-panel">
+      <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">
+        Upload MP3 or WAV to replace any synthesised sound. Files are saved in your browser — no re-upload needed.
+      </p>
+      <div id="sfx-list" class="settings-form"></div>
+    </div>
+
+    <div id="tab-calibrate" class="tab-panel">
+      <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:0.75rem">
+        Simulate games silently (no sound, no UI) to verify your payout odds produce the expected spread.
+        The pity mechanic is included.
+      </p>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem">
+        <button class="save-btn" id="sim-run">▶ Run 1 000 games</button>
+        <button class="save-btn" id="sim-run-100"
+          style="background:var(--surface2);color:var(--text);border:1px solid rgba(255,255,255,0.15)">
+          ▶ Run 100
+        </button>
+      </div>
+      <div id="sim-results"></div>
+    </div>
+
   </div><!-- /admin-screen -->
 
   <!-- ═══ MOBILE TOUCH CONTROLS ═══ -->
   <div id="mobile-bar">
+    <div id="mob-eggs">
+      <button class="mob-egg-btn" data-egg="0">⭐</button>
+      <button class="mob-egg-btn" data-egg="1">🎉</button>
+      <button class="mob-egg-btn" data-egg="2">👥</button>
+    </div>
     <div id="mob-coin-col">
       <button id="mob-coin-btn">🪙</button>
       <div class="mob-label">Coin</div>
@@ -712,6 +761,11 @@ function shuffle(a) {
 }
 
 function spinReels(cfg) {
+  if (cfg.forcing) {
+    const star = FRUITS.find(f => f.id === 'star');
+    return [star, star, star];
+  }
+
   const r = Math.random();
 
   if (cfg.pitying || r < cfg.threeChance) {
@@ -829,8 +883,29 @@ function ping(ac, dest, t, freq, decay, amp = 0.45) {
   osc.stop(t + decay + 0.01);
 }
 
+// Play a decoded custom AudioBuffer instead of synthesised sound
+function playCustom(key, vol) {
+  if (!customSfx[key]) return false;
+  const { ac, g } = mg(vol);
+  const src = ac.createBufferSource();
+  src.buffer = customSfx[key];
+  src.connect(g);
+  src.start();
+  return true;
+}
+
+// Decode any pending raw buffers (called after first user gesture)
+async function decodePendingSfx() {
+  for (const [key, ab] of Object.entries(rawSfx)) {
+    if (customSfx[key]) continue;
+    try { customSfx[key] = await getAc().decodeAudioData(ab.slice()); }
+    catch(e) { console.warn('SFX decode failed:', key); }
+  }
+}
+
 // 🪙 Coin drops into treasure chest
 function playCoinInserted(vol) {
+  if (playCustom('coin', vol * 0.7)) return;
   const { ac, g } = mg(vol * 0.55);
   const t = ac.currentTime;
 
@@ -860,6 +935,7 @@ function playCoinInserted(vol) {
 
 // 😤 Polite ahem (no coin)
 function playAhem(vol) {
+  if (playCustom('ahem', vol * 0.7)) return;
   const { ac, g } = mg(vol * 0.42);
   const t = ac.currentTime;
 
@@ -943,6 +1019,7 @@ function playLeverClunk(vol) {
 
 // Bell ching for each reel stop
 function playChing(vol) {
+  if (playCustom('ching', vol)) return;
   const { ac, g } = mg(vol * 0.48);
   const t = ac.currentTime;
   [[880, 1], [1320, 0.55], [1760, 0.28]].forEach(([freq, amp]) => {
@@ -958,6 +1035,7 @@ function playChing(vol) {
 
 // Ascending arpeggio for pair / 3-of-a-kind
 function playWin(vol) {
+  if (playCustom('win', vol)) return;
   const { ac, g } = mg(vol * 0.38);
   [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
     const osc  = ac.createOscillator();
@@ -973,6 +1051,7 @@ function playWin(vol) {
 
 // Jackpot fanfare
 function playJackpot(vol) {
+  if (playCustom('jackpot', vol)) return;
   const { ac, g } = mg(vol * 0.40);
   const seq = [[523,0.12],[659,0.12],[784,0.12],[1047,0.26],
                [784,0.08],[1047,0.08],[784,0.08],[1047,0.55]];
@@ -991,6 +1070,7 @@ function playJackpot(vol) {
 
 // Wah-wah for no win
 function playNoWin(vol) {
+  if (playCustom('nowin', vol)) return;
   const { ac, g } = mg(vol * 0.28);
   [300, 240, 180].forEach((freq, i) => {
     const osc  = ac.createOscillator();
@@ -1028,15 +1108,78 @@ function startSpinSound(vol) {
   return () => { running = false; try { g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.2); } catch(_){} };
 }
 
+// 🎉 Party ascending arpeggio
+function playParty(vol) {
+  const { ac, g } = mg(vol * 0.38);
+  [523, 659, 784, 1047, 1319].forEach((freq, i) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    const t    = ac.currentTime + i * 0.08;
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+    osc.start(t); osc.stop(t + 0.38);
+  });
+}
+
+// 👥 Crowd "ooooh" noise burst
+function playCrowdOoh(vol) {
+  const { ac, g } = mg(vol * 0.32);
+  const t = ac.currentTime;
+  [260, 330, 420].forEach((freq, i) => {
+    const len  = Math.ceil(ac.sampleRate * 0.9);
+    const buf  = ac.createBuffer(1, len, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let j = 0; j < len; j++) data[j] = Math.random() * 2 - 1;
+    const src  = ac.createBufferSource();
+    const bpf  = ac.createBiquadFilter();
+    const gain = ac.createGain();
+    src.buffer = buf;
+    bpf.type = 'bandpass'; bpf.frequency.value = freq + i * 55; bpf.Q.value = 9;
+    src.connect(bpf); bpf.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0, t + i * 0.07);
+    gain.gain.linearRampToValueAtTime(0.55, t + i * 0.07 + 0.18);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    src.start(t + i * 0.07); src.stop(t + 0.92);
+  });
+}
+
+// Easter egg handlers
+function eggParty() {
+  if (playCustom('egg1', cfg.volume)) return; // custom override via SFX tab
+  playParty(cfg.volume);
+  const reels = document.getElementById('reels');
+  reels.classList.add('party');
+  setTimeout(() => reels.classList.remove('party'), 1600);
+}
+
+function eggForceJackpot() {
+  // Toggle: next spin is a guaranteed jackpot (operator cheat)
+  forceJackpot = !forceJackpot;
+  const title  = document.getElementById('game-title');
+  title.style.textShadow = forceJackpot
+    ? '0 0 30px gold, 0 0 60px gold, 0 0 90px rgba(255,215,0,0.5)'
+    : '';
+}
+
+function eggCrowd() {
+  if (playCustom('egg2', cfg.volume)) return;
+  playCrowdOoh(cfg.volume);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  STATE  nocoin → ready → pulling → spinning → result
 // ═══════════════════════════════════════════════════════════════
 const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-let state      = 'nocoin';
-let leverLevel = 0;
-let cfg        = loadCfg();
-let history    = loadHistory();
-let stopSpin   = null;
+let state        = 'nocoin';
+let leverLevel   = 0;
+let cfg          = loadCfg();
+let history      = loadHistory();
+let stopSpin     = null;
+let forceJackpot = false;           // Easter-egg cheat: force next spin to jackpot
+const rawSfx     = {};              // key → ArrayBuffer  (loaded from IndexedDB, await decode)
+const customSfx  = {};              // key → AudioBuffer  (decoded, ready to play)
 
 // ── Reel animation ──
 const reelTimers = [null, null, null];
@@ -1223,10 +1366,15 @@ function startSpin() {
   updateUI();
   hideBanner();
 
+  const forcing     = forceJackpot;
+  forceJackpot      = false;
+  document.getElementById('game-title').style.textShadow = '';
+
   const chosenReels = spinReels({
     threeChance: cfg.threeChance,
     twoChance:   cfg.twoChance,
     pitying:     isPitying(),
+    forcing,
   });
 
   [0,1,2].forEach(startReelAnim);
@@ -1279,6 +1427,9 @@ document.addEventListener('keydown', e => {
   if (k === ' ')             { e.preventDefault(); document.getElementById('spin-btn').classList.add('pressed'); onSpace(); return; }
   if (k === 'enter')         { onSpace();            return; }
   if (/^[1-5]$/.test(k))    { onLeverLevel(parseInt(k)); return; }
+  if (k === 'q')             { eggParty();        return; }
+  if (k === 'w')             { eggForceJackpot(); return; }
+  if (k === 'e')             { eggCrowd();        return; }
 });
 
 document.addEventListener('keyup', () => {
@@ -1291,8 +1442,8 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   else onSpace();
 });
 
-// Unlock Web Audio on first tap (important for iOS)
-document.addEventListener('pointerdown', () => { if (_ac) _ac.resume(); }, { once: true });
+// Unlock Web Audio on first tap (important for iOS) and decode any pending SFX
+document.addEventListener('pointerdown', () => { getAc(); decodePendingSfx(); }, { once: true });
 
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN PANEL
@@ -1385,9 +1536,11 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'stats')    buildStats();
-    if (btn.dataset.tab === 'history')  buildLog();
-    if (btn.dataset.tab === 'settings') syncSettingsUI();
+    if (btn.dataset.tab === 'stats')     buildStats();
+    if (btn.dataset.tab === 'history')   buildLog();
+    if (btn.dataset.tab === 'settings')  syncSettingsUI();
+    if (btn.dataset.tab === 'sfx')       buildSfxTab();
+    if (btn.dataset.tab === 'calibrate') buildCalibrateTab();
   });
 });
 
@@ -1424,6 +1577,182 @@ document.getElementById('clear-history').addEventListener('click', () => {
 
 // Initial UI render
 updateUI();
+
+// ═══════════════════════════════════════════════════════════════
+//  CUSTOM SFX  (IndexedDB persistence)
+// ═══════════════════════════════════════════════════════════════
+const SFX_DEFS = [
+  { key: 'coin',    label: '🪙 Coin inserted' },
+  { key: 'ahem',    label: '😤 Ahem (no coin)' },
+  { key: 'ching',   label: '🔔 Reel stop ching' },
+  { key: 'win',     label: '🎉 Win fanfare' },
+  { key: 'jackpot', label: '⭐ Jackpot fanfare' },
+  { key: 'nowin',   label: '😔 No-win wah-wah' },
+  { key: 'egg1',    label: '🎊 Easter egg 1 (Q / ⭐ button)' },
+  { key: 'egg2',    label: '🎊 Easter egg 2 (E / 👥 button)' },
+];
+
+let _sfxDb = null;
+async function getSfxDb() {
+  if (_sfxDb) return _sfxDb;
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('hfm_sfx', 1);
+    r.onupgradeneeded = e => e.target.result.createObjectStore('files');
+    r.onsuccess  = e => { _sfxDb = e.target.result; res(_sfxDb); };
+    r.onerror    = rej;
+  });
+}
+
+async function saveSfxToDb(key, ab) {
+  try { (await getSfxDb()).transaction('files','readwrite').objectStore('files').put(ab, key); }
+  catch(e) { console.warn('SFX save:', e); }
+}
+
+async function deleteSfxFromDb(key) {
+  try {
+    (await getSfxDb()).transaction('files','readwrite').objectStore('files').delete(key);
+    delete rawSfx[key]; delete customSfx[key];
+  } catch(e) {}
+}
+
+async function loadSfxFromDb() {
+  try {
+    const db   = await getSfxDb();
+    const keys = await new Promise(res => {
+      const r = db.transaction('files','readonly').objectStore('files').getAllKeys();
+      r.onsuccess = e => res(e.target.result); r.onerror = () => res([]);
+    });
+    for (const k of keys) {
+      const ab = await new Promise(res => {
+        const r = db.transaction('files','readonly').objectStore('files').get(k);
+        r.onsuccess = e => res(e.target.result); r.onerror = () => res(null);
+      });
+      if (ab) rawSfx[k] = ab;   // decode deferred until first user gesture
+    }
+  } catch(e) { console.warn('SFX DB load:', e); }
+}
+
+function buildSfxTab() {
+  const list = document.getElementById('sfx-list');
+  list.innerHTML = SFX_DEFS.map(({ key, label }) => {
+    const loaded = !!(customSfx[key] || rawSfx[key]);
+    return `
+    <div class="setting-group">
+      <h4>${label}</h4>
+      <div style="display:flex;align-items:center;gap:0.6rem">
+        <label style="flex:1;background:var(--surface2);border:1px solid rgba(255,255,255,0.15);
+          border-radius:0.4rem;padding:0.4rem 0.7rem;cursor:pointer;font-size:0.82rem;
+          color:${loaded?'var(--green)':'var(--text-dim)'}">
+          ${loaded ? '✅ Custom loaded — tap to replace' : '📁 Choose file…'}
+          <input type="file" accept="audio/*" style="display:none" data-sfx="${key}">
+        </label>
+        ${loaded ? `<button class="danger-btn" data-sfx-clear="${key}">✕ Remove</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('input[type=file]').forEach(inp => {
+    inp.addEventListener('change', async e => {
+      const key  = inp.dataset.sfx;
+      const file = e.target.files[0];
+      if (!file) return;
+      const ab = await file.arrayBuffer();
+      try {
+        customSfx[key] = await getAc().decodeAudioData(ab.slice());
+        rawSfx[key]    = ab;
+        await saveSfxToDb(key, ab);
+        buildSfxTab();
+      } catch(err) { alert('Could not decode audio: ' + err.message); }
+    });
+  });
+
+  list.querySelectorAll('[data-sfx-clear]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await deleteSfxFromDb(btn.dataset.sfxClear);
+      buildSfxTab();
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CALIBRATE / SIMULATOR
+// ═══════════════════════════════════════════════════════════════
+function runSimulation(n) {
+  const types   = [];
+  let consLoss  = 0;
+  for (let i = 0; i < n; i++) {
+    const pitying = consLoss >= cfg.pityCutoff;
+    const reels   = spinReels({ threeChance: cfg.threeChance, twoChance: cfg.twoChance, pitying, forcing: false });
+    const type    = evaluate(reels).type;
+    types.push(type);
+    if (type !== 'none') consLoss = 0; else consLoss++;
+  }
+  return types;
+}
+
+function buildCalibrateTab() {
+  document.getElementById('sim-results').innerHTML = '';
+}
+
+function doSim(n) {
+  const runBtn = document.getElementById('sim-run');
+  runBtn.textContent = `Running…`;
+  runBtn.disabled    = true;
+  setTimeout(() => {
+    const types    = runSimulation(n);
+    const jacks    = types.filter(t => t === 'jackpot').length;
+    const threes   = types.filter(t => t === 'three').length;
+    const twos     = types.filter(t => t === 'two').length;
+    const wins     = jacks + threes + twos;
+    const nones    = types.filter(t => t === 'none').length;
+    const pct      = v => (v / n * 100).toFixed(1) + '%';
+
+    const expThree = (cfg.threeChance * 100).toFixed(1);
+    const expTwo   = (cfg.twoChance   * 100).toFixed(1);
+    const expWin   = ((cfg.threeChance + cfg.twoChance) * 100).toFixed(1);
+    const expNone  = (100 - parseFloat(expWin)).toFixed(1);
+
+    function simRow(label, actual, expected) {
+      const diff = (parseFloat(actual) - parseFloat(expected)).toFixed(1);
+      const ok   = Math.abs(parseFloat(diff)) < 3;
+      return `<tr>
+        <td>${label}</td>
+        <td style="text-align:right;color:var(--text)">${actual}</td>
+        <td style="text-align:right;color:var(--text-dim)">${expected}</td>
+        <td style="text-align:right;color:${ok?'var(--green)':'orange'}">${parseFloat(diff)>0?'+':''}${diff}%</td>
+      </tr>`;
+    }
+
+    document.getElementById('sim-results').innerHTML = `
+      <div class="breakdown-title">${n} simulated games</div>
+      <table class="log-table" style="margin-top:0.5rem">
+        <thead><tr>
+          <th>Outcome</th><th style="text-align:right">Actual</th>
+          <th style="text-align:right">Expected</th><th style="text-align:right">Δ</th>
+        </tr></thead>
+        <tbody>
+          ${simRow('⭐ Jackpot (3× star)', pct(jacks), '~' + (cfg.threeChance * (1/100) * 100).toFixed(2) + '%')}
+          ${simRow('🎰 Three-of-a-kind', pct(threes), expThree + '%')}
+          ${simRow('🎉 Pair', pct(twos), expTwo + '%')}
+          ${simRow('✅ Any win', pct(wins), expWin + '%')}
+          ${simRow('❌ No win', pct(nones), expNone + '%')}
+        </tbody>
+      </table>
+      <p style="font-size:0.74rem;color:var(--text-dim);margin-top:0.6rem">
+        Pity mechanic (force win after ${cfg.pityCutoff} consecutive losses) is included.
+        Small deviations are normal — try 1 000+ games for a stable estimate.
+      </p>`;
+
+    runBtn.textContent = '▶ Run 1 000 games';
+    runBtn.disabled    = false;
+  }, 0);
+}
+
+document.getElementById('sim-run').addEventListener('click',     () => doSim(1000));
+document.getElementById('sim-run-100').addEventListener('click', () => doSim(100));
+
+// Load custom SFX from IndexedDB (decode deferred to first gesture)
+loadSfxFromDb();
 
 // ═══════════════════════════════════════════════════════════════
 //  MOBILE TOUCH CONTROLS
@@ -1491,6 +1820,16 @@ if (isTouchDevice) {
 
   document.addEventListener('touchend',    snapBack);
   document.addEventListener('touchcancel', snapBack);
+
+  // Easter egg buttons in mobile bar
+  document.querySelectorAll('.mob-egg-btn').forEach(btn => {
+    btn.addEventListener('pointerdown', () => {
+      const idx = parseInt(btn.dataset.egg);
+      if (idx === 0) eggParty();
+      else if (idx === 1) eggForceJackpot();
+      else if (idx === 2) eggCrowd();
+    });
+  });
 }
 </script>
 </body>
