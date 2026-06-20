@@ -643,6 +643,7 @@
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
           <button class="save-btn" id="test-tone-btn">🔊 Web Audio tone</button>
           <button class="save-btn" id="html5-beep-btn" style="background:var(--surface2)">🔔 HTML5 beep</button>
+          <button class="save-btn" id="lose-test-btn" style="background:var(--surface2)">😬 Lose sound</button>
           <button class="save-btn" id="recover-audio-btn" style="background:var(--surface2)">↺ Recover audio</button>
         </div>
         <div id="audio-diag-out" style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;min-height:1.2em"></div>
@@ -806,7 +807,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.9';
+const VERSION = '2026-06-20.10';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1252,8 +1253,48 @@ function playJackpot(vol) {
 }
 
 // Wah-wah for no win
+// Bundled loser sound (sounds/lose.mp3), played via HTMLAudioElement.
+// The media path is far more reliable on iOS than Web Audio and respects the
+// element's own .volume. Falls back to the synth wah-wah if the file is absent.
+let _loseAudio = null, _loseFailed = false;
+function getLoseAudio() {
+  if (!_loseAudio) {
+    _loseAudio = new Audio('sounds/lose.mp3');
+    _loseAudio.setAttribute('playsinline', '');
+    _loseAudio.preload = 'auto';
+    _loseAudio.addEventListener('error', () => {
+      _loseFailed = true;
+      _alog('lose.mp3 failed to load (using synth fallback)');
+    });
+  }
+  return _loseAudio;
+}
+function playLoseSound(vol) {
+  if (_loseFailed) return false;
+  const a = getLoseAudio();
+  try {
+    a.pause();
+    a.currentTime = 0;
+    a.volume = Math.max(0, Math.min(1, vol));
+    const p = a.play();
+    if (p && p.catch) p.catch(e => {
+      _alog('lose.mp3 play() rejected:', e.name, e.message);
+      playNoWinSynth(vol);   // async failure → fall back
+    });
+    return true;
+  } catch (e) {
+    _alog('lose.mp3 error:', e);
+    return false;
+  }
+}
+
 function playNoWin(vol) {
-  if (playCustom('nowin', vol)) return;
+  if (playCustom('nowin', vol)) return;   // user-uploaded custom SFX overrides
+  if (playLoseSound(vol)) return;         // bundled lose.mp3
+  playNoWinSynth(vol);                     // synth fallback
+}
+
+function playNoWinSynth(vol) {
   const { ac, g } = mg(vol * 0.28);
   [300, 240, 180].forEach((freq, i) => {
     const osc  = ac.createOscillator();
@@ -1702,6 +1743,14 @@ function _startAudio() {
   document.removeEventListener('keydown',    _startAudio);
   _alog('_startAudio(): first gesture received');
   unmuteIos();
+  // Prime the bundled lose.mp3 element so later (timer-driven) plays work on iOS.
+  try {
+    const la = getLoseAudio();
+    la.muted = true;
+    const p = la.play();
+    if (p && p.then) p.then(() => { la.pause(); la.currentTime = 0; la.muted = false; })
+                      .catch(() => { la.muted = false; });
+  } catch (_) {}
   const ac = getAc();
   _alog('_startAudio(): AC state after getAc():', ac.state);
   try {
@@ -1857,6 +1906,21 @@ document.getElementById('html5-beep-btn').addEventListener('click', () => {
   a.play()
     .then(() => { _alog('html5-beep: playing'); out.textContent = 'HTML5 beep playing — did you hear THIS one?'; })
     .catch(e => { _alog('html5-beep: play() rejected:', e.name, e.message); out.textContent = `HTML5 beep blocked: ${e.name} — ${e.message}`; });
+});
+
+// Lose-sound test — plays the bundled sounds/lose.mp3 via HTMLAudioElement.
+document.getElementById('lose-test-btn').addEventListener('click', () => {
+  const out = document.getElementById('audio-diag-out');
+  unmuteIos();
+  if (_loseFailed) { out.textContent = '⚠️ sounds/lose.mp3 not found — add the file to the repo.'; return; }
+  const a = getLoseAudio();
+  try {
+    a.pause(); a.currentTime = 0; a.volume = Math.max(0, Math.min(1, cfg.volume));
+    _alog('lose-test: attempting lose.mp3 play()');
+    a.play()
+      .then(() => { _alog('lose-test: playing'); out.textContent = 'Playing lose.mp3 — did you hear it?'; })
+      .catch(e => { _alog('lose-test: rejected', e.name, e.message); out.textContent = `lose.mp3 blocked: ${e.name}. (File present in /sounds?)`; });
+  } catch (e) { out.textContent = `Error: ${e.message}`; }
 });
 
 document.getElementById('recover-audio-btn').addEventListener('click', () => {
