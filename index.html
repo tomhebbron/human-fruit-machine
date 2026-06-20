@@ -639,7 +639,10 @@
           Tap the button below — it plays a 440 Hz tone at fixed volume, bypassing all game settings.
           Reports AudioContext state so we can see exactly what's happening.
         </p>
-        <button class="save-btn" id="test-tone-btn">🔊 Play test tone</button>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="save-btn" id="test-tone-btn">🔊 Play test tone</button>
+          <button class="save-btn" id="recover-audio-btn" style="background:var(--surface2)">↺ Recover audio</button>
+        </div>
         <div id="audio-diag-out" style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;min-height:1.2em"></div>
       </div>
     </div>
@@ -797,7 +800,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.4';
+const VERSION = '2026-06-20.5';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -928,8 +931,6 @@ let _ac = null;
 function getAc() {
   if (!_ac) {
     _ac = new (window.AudioContext || window.webkitAudioContext)();
-    // iOS moves the context to 'suspended' when an interruption ends.
-    // Auto-resume at that moment so audio comes back without user action.
     _ac.onstatechange = () => {
       if (_ac.state === 'suspended') _ac.resume().catch(() => {});
     };
@@ -937,6 +938,30 @@ function getAc() {
   if (_ac.state === 'suspended') _ac.resume().catch(() => {});
   return _ac;
 }
+
+// Close and recreate the AudioContext — the only reliable fix after a
+// FaceTime/Siri interruption that doesn't auto-release the session.
+async function recoverAudio() {
+  if (_ac) {
+    try { await _ac.close(); } catch(_) {}
+    _ac = null;
+  }
+  const ac = getAc();
+  try {
+    const buf = ac.createBuffer(1, 1, 22050);
+    const src = ac.createBufferSource();
+    src.buffer = buf; src.connect(ac.destination); src.start(0);
+  } catch(_) {}
+  ac.resume().catch(() => {});
+  decodePendingSfx();
+}
+
+// Auto-recover on next tap after a call/Siri interruption
+function _autoRecover() {
+  if (_ac && _ac.state === 'interrupted') recoverAudio();
+}
+document.addEventListener('touchstart', _autoRecover, { passive: true });
+document.addEventListener('click',      _autoRecover);
 
 function mg(vol) {                      // master gain node helper
   const ac = getAc();
@@ -1719,12 +1744,19 @@ document.getElementById('test-tone-btn').addEventListener('click', () => {
     osc.start();
     osc.stop(ac.currentTime + 1);
     const advice = ac.state === 'interrupted'
-      ? ' ⚠️ INTERRUPTED — another app owns audio (music, AirPods, Siri). Close it and reload.'
+      ? ' ⚠️ INTERRUPTED — tap "↺ Recover audio" to reset.'
       : ' Did you hear it?';
     out.textContent = `State: ${ac.state} | Vol: ${Math.round(cfg.volume * 100)}% |${advice}`;
   } catch(e) {
     out.textContent = `Error: ${e.message}`;
   }
+});
+
+document.getElementById('recover-audio-btn').addEventListener('click', async () => {
+  const out = document.getElementById('audio-diag-out');
+  out.textContent = 'Recovering…';
+  await recoverAudio();
+  out.textContent = `Recovered — state: ${_ac ? _ac.state : 'none'}. Play the test tone to confirm.`;
 });
 
 document.getElementById('admin-btn').addEventListener('click', () => {
