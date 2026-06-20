@@ -633,6 +633,15 @@
     <div id="tab-stats" class="tab-panel active">
       <div class="stats-grid" id="stats-grid"></div>
       <div id="prize-breakdown"></div>
+      <div style="background:var(--surface);border-radius:0.75rem;padding:0.75rem;border:1px solid rgba(255,255,255,0.07);margin-top:1rem">
+        <div class="breakdown-title">Audio Diagnostics</div>
+        <p style="font-size:0.75rem;color:var(--text-dim);margin:0.3rem 0 0.6rem">
+          Tap the button below — it plays a 440 Hz tone at fixed volume, bypassing all game settings.
+          Reports AudioContext state so we can see exactly what's happening.
+        </p>
+        <button class="save-btn" id="test-tone-btn">🔊 Play test tone</button>
+        <div id="audio-diag-out" style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;min-height:1.2em"></div>
+      </div>
     </div>
 
     <div id="tab-settings" class="tab-panel">
@@ -788,7 +797,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.2';
+const VERSION = '2026-06-20.3';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1689,6 +1698,25 @@ function refreshLabels() {
 }
 
 // ── Event wiring ──
+document.getElementById('test-tone-btn').addEventListener('click', () => {
+  const ac  = getAc();
+  const out = document.getElementById('audio-diag-out');
+  try {
+    const g = ac.createGain();
+    g.gain.value = 0.5;
+    g.connect(ac.destination);
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 440;
+    osc.connect(g);
+    osc.start();
+    osc.stop(ac.currentTime + 1);
+    out.textContent = `State: ${ac.state} | Vol setting: ${Math.round(cfg.volume * 100)}% | Tone fired — did you hear it?`;
+  } catch(e) {
+    out.textContent = `Error: ${e.message}`;
+  }
+});
+
 document.getElementById('admin-btn').addEventListener('click', () => {
   buildStats(); buildLog(); syncSettingsUI();
   showScreen('admin-screen');
