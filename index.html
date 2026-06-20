@@ -800,7 +800,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.6';
+const VERSION = '2026-06-20.7';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -941,18 +941,14 @@ function getAc() {
 
 // Close and recreate the AudioContext — the only reliable fix after a
 // FaceTime/Siri interruption that doesn't auto-release the session.
-async function recoverAudio() {
-  // Create and immediately close a throwaway AC synchronously here (still inside
-  // the gesture callback) to prime iOS's user-gesture flag. Without this, the
-  // await below yields back to the browser, the gesture context expires, and the
-  // new real AC's resume() is silently ignored by iOS.
-  const _AC = window.AudioContext || window.webkitAudioContext;
-  if (_AC) { const d = new _AC(); d.resume().catch(()=>{}).finally(()=>d.close().catch(()=>{})); }
+// Must stay synchronous: any await would yield the gesture context and
+// cause iOS to silently reject resume() on the freshly-created AC.
+function recoverAudio() {
   if (_ac) {
-    try { await _ac.close(); } catch(_) {}
+    _ac.close().catch(() => {});   // fire-and-forget; don't await
     _ac = null;
   }
-  const ac = getAc();
+  const ac = getAc();             // new AC created while still in gesture
   try {
     const buf = ac.createBuffer(1, 1, 22050);
     const src = ac.createBufferSource();
@@ -1747,6 +1743,7 @@ function refreshLabels() {
 document.getElementById('test-tone-btn').addEventListener('click', () => {
   const ac  = getAc();
   const out = document.getElementById('audio-diag-out');
+  const t0  = ac.currentTime;
   try {
     const g = ac.createGain();
     g.gain.value = 0.5;
@@ -1756,21 +1753,30 @@ document.getElementById('test-tone-btn').addEventListener('click', () => {
     osc.frequency.value = 440;
     osc.connect(g);
     osc.start();
-    osc.stop(ac.currentTime + 1);
-    const advice = ac.state === 'interrupted'
-      ? ' ⚠️ INTERRUPTED — tap "↺ Recover audio" to reset.'
-      : ' Did you hear it?';
-    out.textContent = `State: ${ac.state} | Vol: ${Math.round(cfg.volume * 100)}% |${advice}`;
+    osc.stop(t0 + 1);
+    let advice;
+    if (ac.state === 'interrupted') {
+      advice = '⚠️ INTERRUPTED — tap "↺ Recover audio"';
+    } else if (ac.state === 'suspended') {
+      advice = '⚠️ SUSPENDED — tap "↺ Recover audio"';
+    } else if (t0 < 0.001) {
+      advice = '⚠️ Clock at 0 — context not fully started yet. Tap screen once more.';
+    } else {
+      advice = 'Did you hear it? (silent? check ringer switch / volume buttons)';
+    }
+    out.textContent = `State: ${ac.state} | t=${t0.toFixed(2)}s | ${advice}`;
   } catch(e) {
     out.textContent = `Error: ${e.message}`;
   }
 });
 
-document.getElementById('recover-audio-btn').addEventListener('click', async () => {
+document.getElementById('recover-audio-btn').addEventListener('click', () => {
   const out = document.getElementById('audio-diag-out');
-  out.textContent = 'Recovering…';
-  await recoverAudio();
-  out.textContent = `Recovered — state: ${_ac ? _ac.state : 'none'}. Play the test tone to confirm.`;
+  recoverAudio();
+  // resume() is async internally; read state after a tick
+  setTimeout(() => {
+    out.textContent = `State after recovery: ${_ac ? _ac.state : 'none'} — tap test tone to confirm.`;
+  }, 150);
 });
 
 document.getElementById('admin-btn').addEventListener('click', () => {
