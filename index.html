@@ -10,18 +10,18 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:            #0f001f;
-      --surface:       #1c0d36;
-      --surface2:      #271548;
-      --gold:          #ffd700;
-      --gold-glow:     rgba(255, 215, 0, 0.25);
-      --green:         #00e676;
-      --green-dim:     rgba(0, 230, 118, 0.12);
-      --text:          #f0e6ff;
-      --text-dim:      rgba(240, 230, 255, 0.45);
-      --reel-bg:       #12042a;
-      --reel-stopped:  #072016;
-      --radius:        1rem;
+      --bg:           #0f001f;
+      --surface:      #1c0d36;
+      --surface2:     #271548;
+      --gold:         #ffd700;
+      --gold-glow:    rgba(255, 215, 0, 0.25);
+      --green:        #00e676;
+      --green-dim:    rgba(0, 230, 118, 0.12);
+      --text:         #f0e6ff;
+      --text-dim:     rgba(240, 230, 255, 0.45);
+      --reel-bg:      #12042a;
+      --reel-stopped: #072016;
+      --radius:       1rem;
     }
 
     html, body { height: 100%; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
@@ -33,13 +33,12 @@
       touch-action: manipulation;
     }
 
-    /* ── APP SHELL ── */
     #app { height: 100vh; display: flex; flex-direction: column; }
 
-    .screen { display: none; flex-direction: column; height: 100%; padding: 0.75rem; gap: 0.75rem; }
+    .screen { display: none; flex-direction: column; height: 100%; padding: 0.75rem; gap: 0.6rem; }
     .screen.active { display: flex; }
 
-    /* ── GAME HEADER ── */
+    /* ── Header ── */
     #game-header {
       display: flex;
       align-items: center;
@@ -69,24 +68,7 @@
     }
     #admin-btn:hover { color: white; border-color: rgba(255,255,255,0.45); }
 
-    #ble-btn {
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.25);
-      border-radius: 50%;
-      width: 2.4rem;
-      height: 2.4rem;
-      cursor: pointer;
-      font-size: 1rem;
-      transition: all 0.2s;
-      flex-shrink: 0;
-    }
-    #ble-btn:hover   { color: white; border-color: rgba(255,255,255,0.45); }
-    #ble-btn.live    { color: var(--green); border-color: var(--green); }
-    #ble-btn.pairing { color: var(--gold);  border-color: var(--gold);
-                       animation: pulse 1s ease-in-out infinite; }
-
-    /* ── REELS ── */
+    /* ── Reels ── */
     #reels {
       display: flex;
       gap: clamp(0.5rem, 2vw, 1rem);
@@ -105,12 +87,11 @@
       border-radius: var(--radius);
       border: 2px solid rgba(255,255,255,0.07);
       padding: 0.75rem 0.5rem;
-      transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
+      transition: background 0.4s, border-color 0.4s, box-shadow 0.4s, opacity 0.4s;
       position: relative;
       overflow: hidden;
     }
 
-    /* glass shine overlay */
     .reel::before {
       content: '';
       position: absolute;
@@ -120,6 +101,8 @@
       pointer-events: none;
       border-radius: var(--radius) var(--radius) 0 0;
     }
+
+    .reel.dim { opacity: 0.4; }
 
     .reel.spinning {
       border-color: rgba(255, 215, 0, 0.35);
@@ -156,7 +139,6 @@
       font-size: clamp(3rem, 10vw, 7rem);
       line-height: 1;
       display: block;
-      transition: filter 0.1s;
     }
 
     .reel.spinning .reel-emoji {
@@ -165,7 +147,7 @@
     }
 
     @keyframes spin-flicker {
-      0%  { opacity: 1;   }
+      0%  { opacity: 1;    }
       50% { opacity: 0.65; }
     }
 
@@ -177,27 +159,81 @@
       text-align: center;
     }
 
-    /* ── CONTROLS ── */
+    /* ── Controls ── */
     #controls {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 0.7rem;
+      gap: 0.5rem;
       flex-shrink: 0;
       padding-bottom: 0.4rem;
     }
 
+    /* ── Coin status ── */
+    #coin-status {
+      font-size: clamp(0.9rem, 3vw, 1.2rem);
+      min-height: 1.8rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-dim);
+      letter-spacing: 0.03em;
+      transition: all 0.3s;
+    }
+
+    #coin-status.waiting {
+      color: var(--gold);
+      animation: coin-pulse 1.6s ease-in-out infinite;
+    }
+
+    #coin-status.ready   { color: var(--green); }
+
+    @keyframes coin-pulse {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 1; }
+    }
+
+    /* ── Lever dots ── */
+    #lever-dots {
+      display: flex;
+      gap: 0.45rem;
+      min-height: 1.2rem;
+      align-items: center;
+    }
+
+    .dot {
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.14);
+      transition: all 0.07s;
+    }
+
+    .dot.lit {
+      background: var(--gold);
+      border-color: var(--gold);
+      box-shadow: 0 0 6px var(--gold-glow);
+    }
+
+    .dot[data-level="5"].lit {
+      background: var(--green);
+      border-color: var(--green);
+      box-shadow: 0 0 10px rgba(0, 230, 118, 0.6);
+    }
+
+    /* ── Spin button ── */
     #spin-btn {
       background: radial-gradient(circle at 35% 30%, #ff7070, #cc0000);
       border: none;
       border-radius: 50%;
-      width: clamp(90px, 20vw, 148px);
-      height: clamp(90px, 20vw, 148px);
+      width: clamp(86px, 19vw, 140px);
+      height: clamp(86px, 19vw, 140px);
       color: white;
       cursor: pointer;
       font-weight: 900;
       box-shadow: 0 8px 0 #7a0000, 0 0 44px rgba(255, 40, 40, 0.38);
-      transition: transform 0.1s, box-shadow 0.1s;
+      transition: transform 0.1s, box-shadow 0.1s, opacity 0.3s;
       touch-action: manipulation;
       display: flex;
       flex-direction: column;
@@ -212,22 +248,23 @@
     }
 
     #spin-btn:disabled {
-      opacity: 0.38;
+      opacity: 0.3;
       cursor: not-allowed;
       transform: none !important;
       box-shadow: 0 8px 0 #7a0000;
     }
 
-    .btn-icon { font-size: clamp(1.5rem, 4.5vw, 2.5rem); }
-    .btn-text { font-size: clamp(0.9rem, 3vw, 1.4rem); letter-spacing: 0.08em; }
+    .btn-icon { font-size: clamp(1.4rem, 4vw, 2.2rem); }
+    .btn-text { font-size: clamp(0.8rem, 2.8vw, 1.3rem); letter-spacing: 0.08em; }
 
     #spin-hint {
       font-size: 0.72rem;
       color: var(--text-dim);
       letter-spacing: 0.06em;
+      min-height: 1.1em;
     }
 
-    /* ── PRIZE BANNER ── */
+    /* ── Prize banner ── */
     #prize-banner {
       display: none;
       flex-direction: column;
@@ -242,7 +279,7 @@
       max-width: 480px;
     }
 
-    #prize-banner.show  { display: flex; }
+    #prize-banner.show    { display: flex; }
 
     #prize-banner.win {
       background: var(--green-dim);
@@ -255,12 +292,11 @@
       background: rgba(255, 215, 0, 0.07);
       border-color: var(--gold);
       box-shadow: 0 0 60px var(--gold-glow);
-      animation: jackpot-glow 0.45s ease-in-out 5 alternate, banner-pop 0.4s cubic-bezier(0.17, 0.89, 0.32, 1.28);
+      animation: jackpot-glow 0.45s ease-in-out 5 alternate,
+                 banner-pop 0.4s cubic-bezier(0.17, 0.89, 0.32, 1.28);
     }
 
-    #prize-banner.lose {
-      animation: banner-pop 0.3s ease-out;
-    }
+    #prize-banner.lose { animation: banner-pop 0.3s ease-out; }
 
     @keyframes banner-pop {
       0%   { transform: scale(0.55); opacity: 0; }
@@ -273,19 +309,13 @@
       to   { box-shadow: 0 0 90px rgba(255,215,0,0.65); }
     }
 
-    #prize-headline {
-      font-size: clamp(1.2rem, 4.5vw, 2rem);
-      font-weight: 900;
-      color: var(--text-dim);
-    }
-
+    #prize-headline { font-size: clamp(1.2rem, 4.5vw, 2rem); font-weight: 900; color: var(--text-dim); }
     .win     #prize-headline { color: var(--green); }
     .jackpot #prize-headline { color: var(--gold); text-shadow: 0 0 20px var(--gold-glow); }
-
     #prize-detail { font-size: clamp(0.85rem, 2.5vw, 1.1rem); color: var(--text-dim); }
     #prize-award  { font-size: clamp(0.9rem, 2.8vw, 1.2rem); font-weight: 700; color: var(--text); }
 
-    /* ── ADMIN PANEL ── */
+    /* ── Admin ── */
     #admin-screen { padding: 1rem; gap: 0; }
 
     #admin-header {
@@ -310,12 +340,7 @@
       font-size: 0.88rem;
     }
 
-    .tabs {
-      display: flex;
-      gap: 0.4rem;
-      margin-bottom: 1rem;
-      flex-shrink: 0;
-    }
+    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; flex-shrink: 0; }
 
     .tab {
       background: var(--surface);
@@ -329,17 +354,11 @@
       white-space: nowrap;
     }
 
-    .tab.active {
-      background: var(--gold);
-      color: #0f001f;
-      border-color: var(--gold);
-      font-weight: 700;
-    }
+    .tab.active { background: var(--gold); color: #0f001f; border-color: var(--gold); font-weight: 700; }
 
-    .tab-panel          { display: none; flex: 1; overflow-y: auto; min-height: 0; }
-    .tab-panel.active   { display: block; }
+    .tab-panel        { display: none; flex: 1; overflow-y: auto; min-height: 0; }
+    .tab-panel.active { display: block; }
 
-    /* Stats */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
@@ -347,61 +366,23 @@
       margin-bottom: 1.5rem;
     }
 
-    .stat-card {
-      background: var(--surface);
-      border-radius: 0.75rem;
-      padding: 0.75rem 0.4rem;
-      text-align: center;
-      border: 1px solid rgba(255,255,255,0.07);
-    }
-
-    .stat-val { font-size: 1.9rem; font-weight: 900; color: var(--gold); }
-    .stat-lbl { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.1rem; }
+    .stat-card { background: var(--surface); border-radius: 0.75rem; padding: 0.75rem 0.4rem; text-align: center; border: 1px solid rgba(255,255,255,0.07); }
+    .stat-val  { font-size: 1.9rem; font-weight: 900; color: var(--gold); }
+    .stat-lbl  { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.1rem; }
 
     .breakdown-title { color: var(--gold); font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: 700; }
-
-    .prize-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 0.3rem 0;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-      font-size: 0.85rem;
-    }
-
+    .prize-row { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; }
     .prize-row span:last-child { color: var(--gold); font-weight: 700; }
 
-    /* Settings */
     .settings-form { display: flex; flex-direction: column; gap: 1rem; padding-bottom: 1.5rem; }
 
-    .setting-group {
-      background: var(--surface);
-      border-radius: 0.75rem;
-      padding: 0.8rem 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.65rem;
-    }
-
-    .setting-group h4 {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--gold);
-      margin-bottom: 0.1rem;
-    }
-
+    .setting-group { background: var(--surface); border-radius: 0.75rem; padding: 0.8rem 1rem; display: flex; flex-direction: column; gap: 0.65rem; }
+    .setting-group h4 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold); margin-bottom: 0.1rem; }
     .setting-row { display: flex; flex-direction: column; gap: 0.2rem; }
-
-    .setting-row label {
-      font-size: 0.85rem;
-      color: var(--text-dim);
-      display: flex;
-      justify-content: space-between;
-    }
-
+    .setting-row label { font-size: 0.85rem; color: var(--text-dim); display: flex; justify-content: space-between; }
     .setting-row label span { color: var(--text); font-weight: 700; }
 
-    input[type=range]  { width: 100%; accent-color: var(--gold); cursor: pointer; }
+    input[type=range] { width: 100%; accent-color: var(--gold); cursor: pointer; }
 
     input[type=text] {
       background: rgba(255,255,255,0.07);
@@ -413,37 +394,11 @@
       width: 100%;
     }
 
-    .save-btn {
-      background: var(--gold);
-      color: #0f001f;
-      border: none;
-      padding: 0.65rem 1.6rem;
-      border-radius: 0.5rem;
-      font-size: 0.95rem;
-      font-weight: 700;
-      cursor: pointer;
-      align-self: flex-start;
-    }
+    .save-btn { background: var(--gold); color: #0f001f; border: none; padding: 0.65rem 1.6rem; border-radius: 0.5rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; align-self: flex-start; }
 
-    /* History */
-    .history-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 0.75rem;
-    }
-
+    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
     .history-header h3 { color: var(--gold); font-size: 0.95rem; }
-
-    .danger-btn {
-      background: rgba(255,50,50,0.14);
-      border: 1px solid rgba(255,50,50,0.28);
-      color: #ff7b7b;
-      padding: 0.3rem 0.7rem;
-      border-radius: 0.4rem;
-      cursor: pointer;
-      font-size: 0.8rem;
-    }
+    .danger-btn { background: rgba(255,50,50,0.14); border: 1px solid rgba(255,50,50,0.28); color: #ff7b7b; padding: 0.3rem 0.7rem; border-radius: 0.4rem; cursor: pointer; font-size: 0.8rem; }
 
     .log-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
     .log-table th { background: var(--surface); padding: 0.4rem 0.5rem; text-align: left; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,0.1); }
@@ -451,20 +406,37 @@
     .log-table tr.won     td { color: var(--green); }
     .log-table tr.lost    td { color: var(--text-dim); }
     .log-table tr.jackpot td { color: var(--gold); }
+
+    /* ── Key guide (admin cheat sheet) ── */
+    .key-guide { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+    .key-pill {
+      background: var(--surface2);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 0.4rem;
+      padding: 0.25rem 0.55rem;
+      font-size: 0.78rem;
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+    }
+    .key-pill kbd { background: var(--gold); color: #0f001f; border-radius: 0.25rem; padding: 0.05rem 0.3rem; font-weight: 700; font-size: 0.75rem; }
+    .key-pill span { color: var(--text-dim); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
   </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- ═══════ GAME SCREEN ═══════ -->
+  <!-- ═══ GAME SCREEN ═══ -->
   <div id="game-screen" class="screen active">
 
     <header id="game-header">
       <div id="game-title">🎰 Human Fruit Machine</div>
-      <div style="display:flex;gap:0.4rem;align-items:center">
-        <button id="ble-btn" title="Connect Bluetooth lever">📡</button>
-        <button id="admin-btn" title="Admin Panel">⚙️</button>
-      </div>
+      <button id="admin-btn" title="Admin Panel">⚙️</button>
     </header>
 
     <div id="reels">
@@ -486,11 +458,22 @@
     </div>
 
     <div id="controls">
-      <button id="spin-btn">
+      <div id="coin-status" class="waiting">🪙 Insert coin to play</div>
+
+      <button id="spin-btn" disabled>
         <span class="btn-icon">🎰</span>
         <span class="btn-text" id="btn-label">SPIN!</span>
       </button>
-      <div id="spin-hint">Press SPACE or tap to spin</div>
+
+      <div id="lever-dots">
+        <span class="dot" data-level="1"></span>
+        <span class="dot" data-level="2"></span>
+        <span class="dot" data-level="3"></span>
+        <span class="dot" data-level="4"></span>
+        <span class="dot" data-level="5"></span>
+      </div>
+
+      <div id="spin-hint"></div>
 
       <div id="prize-banner">
         <div id="prize-headline"></div>
@@ -501,7 +484,7 @@
 
   </div><!-- /game-screen -->
 
-  <!-- ═══════ ADMIN SCREEN ═══════ -->
+  <!-- ═══ ADMIN SCREEN ═══ -->
   <div id="admin-screen" class="screen">
 
     <div id="admin-header">
@@ -513,15 +496,14 @@
       <button class="tab active" data-tab="stats">📊 Stats</button>
       <button class="tab"        data-tab="settings">🔧 Settings</button>
       <button class="tab"        data-tab="history">📋 Log</button>
+      <button class="tab"        data-tab="keys">⌨️ Keys</button>
     </div>
 
-    <!-- STATS TAB -->
     <div id="tab-stats" class="tab-panel active">
       <div class="stats-grid" id="stats-grid"></div>
       <div id="prize-breakdown"></div>
     </div>
 
-    <!-- SETTINGS TAB -->
     <div id="tab-settings" class="tab-panel">
       <div class="settings-form">
         <div class="setting-group">
@@ -558,7 +540,7 @@
           </div>
         </div>
         <div class="setting-group">
-          <h4>Prizes (displayed on screen when won)</h4>
+          <h4>Prizes</h4>
           <div class="setting-row">
             <label>Pair prize</label>
             <input type="text" id="s-prize-two" value="Sticker or lolly! 🍭">
@@ -568,7 +550,7 @@
             <input type="text" id="s-prize-three" value="Bag of sweets! 🍬">
           </div>
           <div class="setting-row">
-            <label>Jackpot prize (⭐ Lucky Star × 3)</label>
+            <label>Jackpot (⭐ Lucky Star × 3)</label>
             <input type="text" id="s-prize-jackpot" value="TOP PRIZE — see the stall holder! 🏆">
           </div>
         </div>
@@ -576,7 +558,6 @@
       </div>
     </div>
 
-    <!-- HISTORY TAB -->
     <div id="tab-history" class="tab-panel">
       <div class="history-header">
         <h3 id="history-title">Play Log</h3>
@@ -590,23 +571,44 @@
       </div>
     </div>
 
+    <div id="tab-keys" class="tab-panel">
+      <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">
+        ESP32 sends these as BLE keyboard presses. You can also type them directly to test without hardware.
+      </p>
+      <div class="key-guide">
+        <div class="key-pill"><kbd>C</kbd><span>Coin inserted → coin sound + ready</span></div>
+        <div class="key-pill"><kbd>1</kbd><span>Lever ¼ pull → ratchet slow</span></div>
+        <div class="key-pill"><kbd>2</kbd><span>Lever ½ pull → ratchet medium</span></div>
+        <div class="key-pill"><kbd>3</kbd><span>Lever ¾ pull → ratchet fast</span></div>
+        <div class="key-pill"><kbd>4</kbd><span>Lever nearly home → ratchet rapid</span></div>
+        <div class="key-pill"><kbd>5</kbd><span>Lever bottomed → clunk</span></div>
+        <div class="key-pill"><kbd>Space</kbd><span>Lever released → SPIN (or reset after result)</span></div>
+        <div class="key-pill"><kbd>A</kbd><span>Lever pulled with no coin → ahem</span></div>
+      </div>
+      <p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.5rem">
+        Tip: open this page in a browser on your laptop and run through a full play with the keyboard before fair day.
+      </p>
+    </div>
+
   </div><!-- /admin-screen -->
 
 </div><!-- /app -->
 
 <script>
+'use strict';
+
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
 // ═══════════════════════════════════════════════════════════════
 const FRUITS = [
-  { id: 'cherry',      emoji: '🍒', name: 'Cherry',      weight: 22 },
-  { id: 'lemon',       emoji: '🍋', name: 'Lemon',       weight: 20 },
-  { id: 'orange',      emoji: '🍊', name: 'Orange',      weight: 18 },
-  { id: 'apple',       emoji: '🍎', name: 'Apple',       weight: 15 },
-  { id: 'banana',      emoji: '🍌', name: 'Banana',      weight: 12 },
-  { id: 'strawberry',  emoji: '🍓', name: 'Strawberry',  weight:  9 },
-  { id: 'grapes',      emoji: '🍇', name: 'Grapes',      weight:  3 },
-  { id: 'star',        emoji: '⭐', name: 'Lucky Star',  weight:  1 },
+  { id: 'cherry',     emoji: '🍒', name: 'Cherry',     weight: 22 },
+  { id: 'lemon',      emoji: '🍋', name: 'Lemon',      weight: 20 },
+  { id: 'orange',     emoji: '🍊', name: 'Orange',     weight: 18 },
+  { id: 'apple',      emoji: '🍎', name: 'Apple',      weight: 15 },
+  { id: 'banana',     emoji: '🍌', name: 'Banana',     weight: 12 },
+  { id: 'strawberry', emoji: '🍓', name: 'Strawberry', weight:  9 },
+  { id: 'grapes',     emoji: '🍇', name: 'Grapes',     weight:  3 },
+  { id: 'star',       emoji: '⭐', name: 'Lucky Star', weight:  1 },
 ];
 
 function weightedRandom() {
@@ -649,7 +651,6 @@ function spinReels(cfg) {
     const f = weightedRandom();
     if (!used.has(f.id)) { used.add(f.id); res.push(f); }
   }
-  // Safety fallback
   for (const f of FRUITS) {
     if (res.length === 3) break;
     if (!used.has(f.id)) { used.add(f.id); res.push(f); }
@@ -689,8 +690,8 @@ function loadCfg() {
   try {
     const raw = localStorage.getItem('hfm_cfg');
     if (!raw) return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes } };
-    const stored = JSON.parse(raw);
-    return { ...DEFAULTS, ...stored, prizes: { ...DEFAULTS.prizes, ...(stored.prizes || {}) } };
+    const s = JSON.parse(raw);
+    return { ...DEFAULTS, ...s, prizes: { ...DEFAULTS.prizes, ...(s.prizes || {}) } };
   } catch { return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes } }; }
 }
 
@@ -709,155 +710,255 @@ function appendPlay(entry) {
   return trimmed;
 }
 
-function clearHistory() {
-  localStorage.removeItem('hfm_hist');
-  return [];
-}
+function clearHistory() { localStorage.removeItem('hfm_hist'); return []; }
 
 // ═══════════════════════════════════════════════════════════════
-//  SOUNDS  (Web Audio API — synthesised, no files needed)
+//  AUDIO
 // ═══════════════════════════════════════════════════════════════
-let _audioCtx = null;
+let _ac = null;
 
-function ac() {
-  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (_audioCtx.state === 'suspended') _audioCtx.resume();
-  return _audioCtx;
+function getAc() {
+  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (_ac.state === 'suspended') _ac.resume();
+  return _ac;
 }
 
-function masterGain(vol) {
-  const ctx = ac();
-  const g   = ctx.createGain();
+function mg(vol) {                      // master gain node helper
+  const ac = getAc();
+  const g  = ac.createGain();
   g.gain.value = vol;
-  g.connect(ctx.destination);
-  return { ctx, g };
+  g.connect(ac.destination);
+  return { ac, g };
 }
 
-// Bell-like ching for each reel stop
-function playChing(vol) {
-  const { ctx, g } = masterGain(vol * 0.48);
-  const t = ctx.currentTime;
-  [[880, 1], [1320, 0.55], [1760, 0.28]].forEach(([freq, amp]) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type           = 'triangle';
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(g);
-    gain.gain.setValueAtTime(amp, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
-    osc.start(t);
-    osc.stop(t  + 2.0);
+// Single metallic ping (used in coin cascade)
+function ping(ac, dest, t, freq, decay, amp = 0.45) {
+  const osc  = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type            = 'sine';
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(dest);
+  gain.gain.setValueAtTime(amp, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + decay);
+  osc.start(t);
+  osc.stop(t + decay + 0.01);
+}
+
+// 🪙 Coin drops into treasure chest
+function playCoinInserted(vol) {
+  const { ac, g } = mg(vol * 0.55);
+  const t = ac.currentTime;
+
+  // Sharp entry clink
+  ping(ac, g, t, 3600, 0.07, 0.6);
+
+  // Falling whoosh
+  const osc = ac.createOscillator();
+  const gw  = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(900, t + 0.06);
+  osc.frequency.exponentialRampToValueAtTime(180, t + 0.2);
+  osc.connect(gw); gw.connect(g);
+  gw.gain.setValueAtTime(0.18, t + 0.06);
+  gw.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  osc.start(t + 0.06); osc.stop(t + 0.21);
+
+  // Cascade of coins landing
+  for (let i = 0; i < 14; i++) {
+    const d = 0.2 + i * 0.06 + Math.random() * 0.04;
+    ping(ac, g, t + d,
+      1400 + Math.random() * 2400,
+      0.1  + Math.random() * 0.25,
+      0.25 + Math.random() * 0.45);
+  }
+}
+
+// 😤 Polite ahem (no coin)
+function playAhem(vol) {
+  const { ac, g } = mg(vol * 0.42);
+  const t = ac.currentTime;
+
+  function vocalBurst(startT, freq, q, dur, amp) {
+    const samples = Math.ceil(ac.sampleRate * (dur + 0.06));
+    const buf     = ac.createBuffer(1, samples, ac.sampleRate);
+    const data    = buf.getChannelData(0);
+    for (let i = 0; i < samples; i++) data[i] = Math.random() * 2 - 1;
+
+    const src    = ac.createBufferSource();
+    const filter = ac.createBiquadFilter();
+    const gain   = ac.createGain();
+    src.buffer         = buf;
+    filter.type        = 'bandpass';
+    filter.frequency.value = freq;
+    filter.Q.value     = q;
+    src.connect(filter); filter.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0, startT);
+    gain.gain.linearRampToValueAtTime(amp, startT + 0.04);
+    gain.gain.setValueAtTime(amp, startT + dur * 0.65);
+    gain.gain.exponentialRampToValueAtTime(0.001, startT + dur);
+    src.start(startT); src.stop(startT + dur + 0.01);
+  }
+
+  // Brief pause — the machine considers you — then ahem
+  vocalBurst(t + 0.2, 330, 3.5, 0.16, 0.4);  // "Ah"
+  vocalBurst(t + 0.42, 195, 6,   0.22, 0.5);  // "hem"
+}
+
+// Ratchet click (speeds up with lever level 1–5)
+const RATCHET_MS = [0, 340, 210, 125, 75, 48];
+let ratchetTimer = null;
+let lastClickMs  = 0;
+
+function ensureRatchet() {
+  if (ratchetTimer) return;
+  ratchetTimer = setInterval(() => {
+    if (leverLevel === 0 || (state !== 'ready' && state !== 'pulling')) {
+      stopRatchet(); return;
+    }
+    const interval = RATCHET_MS[leverLevel] || 340;
+    if (Date.now() - lastClickMs >= interval) {
+      playRatchetClick();
+      lastClickMs = Date.now();
+    }
+  }, 14);
+}
+
+function stopRatchet() { clearInterval(ratchetTimer); ratchetTimer = null; }
+
+function playRatchetClick() {
+  const { ac, g } = mg(cfg.volume * 0.28);
+  const t    = ac.currentTime;
+  const freq = 125 + (leverLevel / 5) * 175;
+  const osc  = ac.createOscillator();
+  const gain = ac.createGain();
+  osc.type            = 'square';
+  osc.frequency.value = freq;
+  osc.connect(gain); gain.connect(g);
+  gain.gain.setValueAtTime(0.55, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
+  osc.start(t); osc.stop(t + 0.015);
+}
+
+// Deep thud when lever hits bottom
+function playLeverClunk(vol) {
+  const { ac, g } = mg(vol * 0.6);
+  const t = ac.currentTime;
+  [[85, 38, 0.11], [135, 58, 0.06]].forEach(([f1, f2, dur]) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f1, t);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.78, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.05);
+    osc.start(t); osc.stop(t + dur + 0.06);
   });
 }
 
-// Mechanical clicking loop while reels spin; returns stop()
+// Bell ching for each reel stop
+function playChing(vol) {
+  const { ac, g } = mg(vol * 0.48);
+  const t = ac.currentTime;
+  [[880, 1], [1320, 0.55], [1760, 0.28]].forEach(([freq, amp]) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'triangle'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(amp, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+    osc.start(t); osc.stop(t + 2.0);
+  });
+}
+
+// Ascending arpeggio for pair / 3-of-a-kind
+function playWin(vol) {
+  const { ac, g } = mg(vol * 0.38);
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    const t    = ac.currentTime + i * 0.13;
+    osc.type = 'sine'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.4, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    osc.start(t); osc.stop(t + 0.55);
+  });
+}
+
+// Jackpot fanfare
+function playJackpot(vol) {
+  const { ac, g } = mg(vol * 0.40);
+  const seq = [[523,0.12],[659,0.12],[784,0.12],[1047,0.26],
+               [784,0.08],[1047,0.08],[784,0.08],[1047,0.55]];
+  let t = ac.currentTime;
+  seq.forEach(([freq, dur]) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'square'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.01);
+    t += dur * 0.92;
+  });
+}
+
+// Wah-wah for no win
+function playNoWin(vol) {
+  const { ac, g } = mg(vol * 0.28);
+  [300, 240, 180].forEach((freq, i) => {
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    const t    = ac.currentTime + i * 0.18;
+    osc.type = 'sawtooth'; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    osc.start(t); osc.stop(t + 0.28);
+  });
+}
+
+// Spin loop (mechanical clicking)
 function startSpinSound(vol) {
-  const { ctx, g } = masterGain(vol * 0.22);
+  const { ac, g } = mg(vol * 0.22);
   let running = true;
-  let next    = ctx.currentTime;
+  let next    = ac.currentTime;
 
   function schedule() {
-    const now = ctx.currentTime;
-    while (next < now + 0.35) {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type            = 'square';
-      osc.frequency.value = 110 + Math.random() * 130;
-      osc.connect(gain);
-      gain.connect(g);
+    while (next < ac.currentTime + 0.35) {
+      const osc  = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'square'; osc.frequency.value = 110 + Math.random() * 130;
+      osc.connect(gain); gain.connect(g);
       gain.gain.setValueAtTime(0.3, next);
       gain.gain.exponentialRampToValueAtTime(0.001, next + 0.032);
-      osc.start(next);
-      osc.stop(next  + 0.032);
+      osc.start(next); osc.stop(next + 0.032);
       next += 0.055 + Math.random() * 0.018;
     }
     if (running) setTimeout(schedule, 110);
   }
 
   schedule();
-  return () => {
-    running = false;
-    try { g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2); } catch (_) {}
-  };
-}
-
-// Ascending C-E-G-C arpeggio
-function playWin(vol) {
-  const { ctx, g } = masterGain(vol * 0.38);
-  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const t    = ctx.currentTime + i * 0.13;
-    osc.type            = 'sine';
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(g);
-    gain.gain.setValueAtTime(0.4, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-    osc.start(t);
-    osc.stop(t  + 0.55);
-  });
-}
-
-// Ta-da fanfare
-function playJackpot(vol) {
-  const { ctx, g } = masterGain(vol * 0.40);
-  const seq = [
-    [523,0.12],[659,0.12],[784,0.12],[1047,0.26],
-    [784,0.08],[1047,0.08],[784,0.08],[1047,0.55],
-  ];
-  let t = ctx.currentTime;
-  seq.forEach(([freq, dur]) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type            = 'square';
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(g);
-    gain.gain.setValueAtTime(0.28, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    osc.start(t);
-    osc.stop(t  + dur + 0.01);
-    t += dur * 0.92;
-  });
-}
-
-// Descending wah-wah for no win
-function playNoWin(vol) {
-  const { ctx, g } = masterGain(vol * 0.28);
-  [300, 240, 180].forEach((freq, i) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const t    = ctx.currentTime + i * 0.18;
-    osc.type            = 'sawtooth';
-    osc.frequency.value = freq;
-    osc.connect(gain);
-    gain.connect(g);
-    gain.gain.setValueAtTime(0.22, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-    osc.start(t);
-    osc.stop(t  + 0.28);
-  });
+  return () => { running = false; try { g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.2); } catch(_){} };
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  GAME STATE
+//  STATE  nocoin → ready → pulling → spinning → result
 // ═══════════════════════════════════════════════════════════════
-let state        = 'idle'; // 'idle' | 'spinning' | 'result'
-let cfg          = loadCfg();
-let history      = loadHistory();
-let chosenReels  = [];
-let stopSpin     = null;
-let spinTimers   = [];
+let state      = 'nocoin';
+let leverLevel = 0;
+let cfg        = loadCfg();
+let history    = loadHistory();
+let stopSpin   = null;
 
 // ── Reel animation ──
 const reelTimers = [null, null, null];
 
 function startReelAnim(i) {
-  document.getElementById('reel-' + i).classList.add('spinning');
-  document.getElementById('reel-' + i).classList.remove('stopped');
-  document.getElementById('name-' + i).textContent = '';
+  document.getElementById('reel-' + i).className = 'reel spinning';
+  document.getElementById('name-'  + i).textContent = '';
   reelTimers[i] = setInterval(() => {
     document.getElementById('emoji-' + i).textContent =
       FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
@@ -866,21 +967,17 @@ function startReelAnim(i) {
 
 function lockReel(i, fruit) {
   clearInterval(reelTimers[i]);
-  reelTimers[i] = null;
   document.getElementById('emoji-' + i).textContent = fruit.emoji;
-  document.getElementById('name-' + i).textContent  = fruit.name;
-  document.getElementById('reel-' + i).classList.remove('spinning');
-  document.getElementById('reel-' + i).classList.add('stopped');
+  document.getElementById('name-'  + i).textContent = fruit.name;
+  document.getElementById('reel-'  + i).className   = 'reel stopped';
 }
 
 function resetReels() {
-  [0, 1, 2].forEach(i => {
+  [0,1,2].forEach(i => {
     clearInterval(reelTimers[i]);
-    reelTimers[i] = null;
-    const el = document.getElementById('reel-' + i);
-    el.classList.remove('spinning', 'stopped');
-    document.getElementById('name-'  + i).textContent  = '';
-    document.getElementById('emoji-' + i).textContent  = FRUITS[i].emoji;
+    document.getElementById('reel-'  + i).className   = 'reel';
+    document.getElementById('name-'  + i).textContent = '';
+    document.getElementById('emoji-' + i).textContent = FRUITS[i].emoji;
   });
 }
 
@@ -898,14 +995,12 @@ function showBanner(result) {
   } else if (result.type === 'three') {
     banner.classList.add('win');
     document.getElementById('prize-headline').textContent = '🎰 THREE OF A KIND!';
-    document.getElementById('prize-detail').textContent   =
-      result.match.emoji + ' ' + result.match.name + ' × 3';
+    document.getElementById('prize-detail').textContent   = result.match.emoji + ' ' + result.match.name + ' × 3';
     document.getElementById('prize-award').textContent    = '🎁 ' + cfg.prizes.three;
   } else if (result.type === 'two') {
     banner.classList.add('win');
     document.getElementById('prize-headline').textContent = '🎉 PAIR!';
-    document.getElementById('prize-detail').textContent   =
-      result.match.emoji + ' ' + result.match.name + ' × 2';
+    document.getElementById('prize-detail').textContent   = result.match.emoji + ' ' + result.match.name + ' × 2';
     document.getElementById('prize-award').textContent    = '🎁 ' + cfg.prizes.two;
   } else {
     banner.classList.add('lose');
@@ -914,14 +1009,58 @@ function showBanner(result) {
   }
 }
 
-function hideBanner() {
-  document.getElementById('prize-banner').className = '';
-}
+function hideBanner() { document.getElementById('prize-banner').className = ''; }
 
-// ── Button label ──
-function setBtn(label, disabled) {
-  document.getElementById('btn-label').textContent   = label;
-  document.getElementById('spin-btn').disabled       = disabled;
+// ── UI update ──
+function updateUI() {
+  const btn   = document.getElementById('spin-btn');
+  const label = document.getElementById('btn-label');
+  const hint  = document.getElementById('spin-hint');
+  const cs    = document.getElementById('coin-status');
+
+  switch (state) {
+    case 'nocoin':
+      btn.disabled      = true;
+      label.textContent = 'SPIN!';
+      hint.textContent  = '';
+      cs.className      = 'waiting';
+      cs.innerHTML      = '🪙 Insert coin to play';
+      break;
+    case 'ready':
+      btn.disabled      = false;
+      label.textContent = 'SPIN!';
+      hint.textContent  = 'Pull the lever!';
+      cs.className      = 'ready';
+      cs.innerHTML      = '✅ Ready!';
+      break;
+    case 'pulling':
+      btn.disabled      = false;
+      label.textContent = 'SPIN!';
+      hint.textContent  = '';
+      cs.className      = '';
+      cs.innerHTML      = '';
+      break;
+    case 'spinning':
+      btn.disabled      = true;
+      label.textContent = 'Spinning…';
+      hint.textContent  = '';
+      cs.className      = '';
+      cs.innerHTML      = '';
+      break;
+    case 'result':
+      btn.disabled      = false;
+      label.textContent = 'Play Again!';
+      hint.textContent  = 'or insert another coin';
+      cs.className      = '';
+      cs.innerHTML      = '';
+      break;
+  }
+
+  // Lever dots
+  for (let i = 1; i <= 5; i++) {
+    document.querySelector(`.dot[data-level="${i}"]`)
+      .classList.toggle('lit', i <= leverLevel && state === 'pulling');
+  }
 }
 
 // ── Pity check ──
@@ -930,80 +1069,145 @@ function isPitying() {
   return history.slice(-cfg.pityCutoff).every(h => !h.won);
 }
 
-// ── Main spin logic ──
-function doSpin() {
-  if (state === 'spinning') return;
+// ═══════════════════════════════════════════════════════════════
+//  KEY EVENTS  (from BLE keyboard or direct testing)
+// ═══════════════════════════════════════════════════════════════
 
-  // In result state: reset and go idle
+function onCoin() {
+  if (state === 'spinning') return;
+  if (state === 'result') { hideBanner(); resetReels(); }
+  stopRatchet();
+  setLeverLevel(0);
+  playCoinInserted(cfg.volume);
+  state = 'ready';
+  updateUI();
+}
+
+function onLeverLevel(n) {
+  if (state !== 'ready' && state !== 'pulling') return;
+  if (n === leverLevel) return;
+  setLeverLevel(n);
+  if (n > 0) {
+    if (n === 5) playLeverClunk(cfg.volume);
+    state = 'pulling';
+    ensureRatchet();
+  } else {
+    stopRatchet();
+  }
+  updateUI();
+}
+
+function setLeverLevel(n) {
+  leverLevel = n;
+  for (let i = 1; i <= 5; i++) {
+    document.querySelector(`.dot[data-level="${i}"]`)
+      .classList.toggle('lit', i <= n && (state === 'pulling' || state === 'ready'));
+  }
+}
+
+function onAhem() {
+  if (state !== 'nocoin' && state !== 'result') return;
+  playAhem(cfg.volume);
+}
+
+function onSpace() {
+  // Reset after result
   if (state === 'result') {
     hideBanner();
     resetReels();
-    setBtn('SPIN!', false);
-    state = 'idle';
+    stopRatchet();
+    setLeverLevel(0);
+    state = 'nocoin';
+    updateUI();
     return;
   }
 
-  if (state !== 'idle') return;
+  // Spin if ready or mid-pull
+  if (state === 'ready' || state === 'pulling') {
+    startSpin();
+  }
+}
 
-  // ── Kick off spin ──
+// ═══════════════════════════════════════════════════════════════
+//  SPIN
+// ═══════════════════════════════════════════════════════════════
+function startSpin() {
+  stopRatchet();
+  setLeverLevel(0);
   state = 'spinning';
-  setBtn('Spinning…', true);
+  updateUI();
   hideBanner();
 
-  chosenReels = spinReels({
+  const chosenReels = spinReels({
     threeChance: cfg.threeChance,
     twoChance:   cfg.twoChance,
     pitying:     isPitying(),
   });
 
-  [0, 1, 2].forEach(startReelAnim);
+  [0,1,2].forEach(startReelAnim);
   stopSpin = startSpinSound(cfg.volume);
 
   const sd = cfg.spinDuration;
   const rd = cfg.reelDelay;
 
-  function timer(fn, ms) {
-    spinTimers.push(setTimeout(fn, ms));
-  }
-
-  // Reel 1 stops
-  timer(() => {
+  setTimeout(() => {
     if (stopSpin) { stopSpin(); stopSpin = null; }
     lockReel(0, chosenReels[0]);
     playChing(cfg.volume);
   }, sd);
 
-  // Reel 2 stops
-  timer(() => {
+  setTimeout(() => {
     lockReel(1, chosenReels[1]);
     playChing(cfg.volume);
   }, sd + rd);
 
-  // Reel 3 stops → evaluate
-  timer(() => {
+  setTimeout(() => {
     lockReel(2, chosenReels[2]);
     playChing(cfg.volume);
 
     setTimeout(() => {
       const result = evaluate(chosenReels);
-
       history = appendPlay({
-        reels: chosenReels.map(f => f.emoji + ' ' + f.name),
-        type:  result.type,
-        won:   result.type !== 'none',
+        reels: chosenReels.map(f => f.emoji + ' ' + f.name),
+        type: result.type,
+        won:  result.type !== 'none',
       });
-
       showBanner(result);
-
-      if      (result.type === 'jackpot')              playJackpot(cfg.volume);
+      if (result.type === 'jackpot')                        playJackpot(cfg.volume);
       else if (result.type === 'three' || result.type === 'two') playWin(cfg.volume);
-      else                                             playNoWin(cfg.volume);
-
-      setBtn('Play Again! 🎰', false);
+      else                                                  playNoWin(cfg.volume);
       state = 'result';
+      updateUI();
     }, 600);
   }, sd + rd * 2);
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  KEYBOARD HANDLER
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+
+  if (k === 'c')             { onCoin();             return; }
+  if (k === 'a')             { onAhem();             return; }
+  if (k === ' ')             { e.preventDefault(); document.getElementById('spin-btn').classList.add('pressed'); onSpace(); return; }
+  if (k === 'enter')         { onSpace();            return; }
+  if (/^[1-5]$/.test(k))    { onLeverLevel(parseInt(k)); return; }
+});
+
+document.addEventListener('keyup', () => {
+  document.getElementById('spin-btn').classList.remove('pressed');
+});
+
+document.getElementById('spin-btn').addEventListener('click', () => {
+  // Button tap acts as either Space (spin/reset) or coin insert if no coin yet
+  if (state === 'nocoin') onCoin();
+  else onSpace();
+});
+
+// Unlock Web Audio on first tap (important for iOS)
+document.addEventListener('pointerdown', () => { if (_ac) _ac.resume(); }, { once: true });
 
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN PANEL
@@ -1029,13 +1233,13 @@ function buildStats() {
   })();
 
   document.getElementById('stats-grid').innerHTML = [
-    [total,   'Plays'],
-    [rate+'%','Win Rate'],
-    [pairs,   'Pairs'],
-    [threes,  '3-of-a-kind'],
-    [jacks,   '⭐ Jackpots'],
-    [streak,  'Loss Streak'],
-  ].map(([v, l]) =>
+    [total,    'Plays'],
+    [rate+'%', 'Win Rate'],
+    [pairs,    'Pairs'],
+    [threes,   '3-of-a-kind'],
+    [jacks,    '⭐ Jackpots'],
+    [streak,   'Loss Streak'],
+  ].map(([v,l]) =>
     `<div class="stat-card"><div class="stat-val">${v}</div><div class="stat-lbl">${l}</div></div>`
   ).join('');
 
@@ -1050,8 +1254,7 @@ function buildStats() {
 
 function buildLog() {
   const recent = [...history].reverse().slice(0, 100);
-  document.getElementById('history-title').textContent =
-    'Play Log (' + history.length + ' total)';
+  document.getElementById('history-title').textContent = 'Play Log (' + history.length + ' total)';
   document.getElementById('log-body').innerHTML = recent.map(h => {
     const cls   = h.type === 'jackpot' ? 'jackpot' : h.won ? 'won' : 'lost';
     const time  = new Date(h.ts).toLocaleTimeString();
@@ -1083,56 +1286,30 @@ function refreshLabels() {
   document.getElementById('lbl-vol').textContent   = document.getElementById('s-vol').value + '%';
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  EVENT WIRING
-// ═══════════════════════════════════════════════════════════════
-
-// Spin button
-document.getElementById('spin-btn').addEventListener('click', doSpin);
-
-// Keyboard: Space / Enter trigger spin; visual feedback
-document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.code === 'Space' || e.code === 'Enter') {
-    e.preventDefault();
-    document.getElementById('spin-btn').classList.add('pressed');
-    doSpin();
-  }
-});
-document.addEventListener('keyup', () => {
-  document.getElementById('spin-btn').classList.remove('pressed');
-});
-
-// Admin open / close
+// ── Event wiring ──
 document.getElementById('admin-btn').addEventListener('click', () => {
-  buildStats();
-  buildLog();
-  syncSettingsUI();
+  buildStats(); buildLog(); syncSettingsUI();
   showScreen('admin-screen');
 });
-document.getElementById('close-admin').addEventListener('click', () => {
-  showScreen('game-screen');
-});
 
-// Tab switching
+document.getElementById('close-admin').addEventListener('click', () => showScreen('game-screen'));
+
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'stats')   buildStats();
-    if (btn.dataset.tab === 'history') buildLog();
+    if (btn.dataset.tab === 'stats')    buildStats();
+    if (btn.dataset.tab === 'history')  buildLog();
     if (btn.dataset.tab === 'settings') syncSettingsUI();
   });
 });
 
-// Slider live labels
 ['s-three','s-two','s-pity','s-spin','s-delay','s-vol'].forEach(id => {
   document.getElementById(id).addEventListener('input', refreshLabels);
 });
 
-// Save settings
 document.getElementById('save-settings').addEventListener('click', () => {
   cfg = {
     threeChance:  parseInt(document.getElementById('s-three').value) / 100,
@@ -1153,185 +1330,15 @@ document.getElementById('save-settings').addEventListener('click', () => {
   setTimeout(() => { btn.textContent = 'Save Settings ✅'; }, 1800);
 });
 
-// Clear history
 document.getElementById('clear-history').addEventListener('click', () => {
   if (confirm('Clear all play history?')) {
     history = clearHistory();
-    buildLog();
-    buildStats();
+    buildLog(); buildStats();
   }
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  BLUETOOTH LEVER
-//  Receives lever position (0–255) from ESP32 over BLE GATT.
-//  Plays ratchet clicks that speed up as lever is pulled.
-//  Triggers doSpin() on release (position drops after peak).
-//
-//  Requires Chrome on Windows/Mac/Android — not Safari or Firefox.
-// ═══════════════════════════════════════════════════════════════
-const BLE_SERVICE = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
-const BLE_CHAR    = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
-
-let bleDevice    = null;
-let leverPos     = 0;
-let peakPos      = 0;
-let releaseArmed = false;
-let clunkPlayed  = false;
-let ratchetTimer = null;
-let lastClickMs  = 0;
-
-function setBleStatus(s) {
-  const btn = document.getElementById('ble-btn');
-  btn.className = s;
-  btn.title = {
-    '':       'Connect Bluetooth lever',
-    pairing:  'Connecting…',
-    live:     'Lever connected  ·  click to disconnect',
-  }[s] ?? '';
-}
-
-async function connectLever() {
-  if (!navigator.bluetooth) {
-    alert('Web Bluetooth needs Chrome on Windows or Android.\nSafari and Firefox are not supported.');
-    return;
-  }
-
-  // Already connected — disconnect
-  if (bleDevice?.gatt?.connected) {
-    bleDevice.gatt.disconnect();
-    setBleStatus('');
-    return;
-  }
-
-  setBleStatus('pairing');
-  try {
-    bleDevice = await navigator.bluetooth.requestDevice({
-      filters:          [{ name: 'FruitMachineLever' }],
-      optionalServices: [BLE_SERVICE],
-    });
-
-    bleDevice.addEventListener('gattserverdisconnected', () => {
-      setBleStatus('');
-      stopRatchet();
-    });
-
-    const server  = await bleDevice.gatt.connect();
-    const service = await server.getPrimaryService(BLE_SERVICE);
-    const chr     = await service.getCharacteristic(BLE_CHAR);
-
-    await chr.startNotifications();
-    chr.addEventListener('characteristicvaluechanged', e => {
-      onLeverData(e.target.value.getUint8(0));
-    });
-
-    setBleStatus('live');
-  } catch (err) {
-    setBleStatus('');
-    // NotFoundError = user closed the picker — not an error worth logging
-    if (err.name !== 'NotFoundError') console.error('BLE:', err);
-  }
-}
-
-function onLeverData(pos) {
-  leverPos = pos;
-
-  // Track peak so we can detect the release
-  if (pos > peakPos) peakPos = pos;
-
-  // Arm release detection once lever is meaningfully pulled
-  if (pos > 160 && !releaseArmed) releaseArmed = true;
-
-  // Clunk sound when lever reaches end of travel and latch engages
-  if (!clunkPlayed && pos > 220) {
-    clunkPlayed = true;
-    playLeverClunk();
-  }
-
-  // Release detected: was armed, now dropping quickly away from peak
-  if (releaseArmed && pos < peakPos - 60 && peakPos > 140) {
-    releaseArmed = false;
-    peakPos      = 0;
-    clunkPlayed  = false;
-    stopRatchet();
-    doSpin();
-    return;
-  }
-
-  // Lever returned to rest — reset all state
-  if (pos < 15) {
-    peakPos      = 0;
-    releaseArmed = false;
-    clunkPlayed  = false;
-    stopRatchet();
-    return;
-  }
-
-  // Keep ratchet running while pulling (only in idle state)
-  if (pos > 10 && state === 'idle') ensureRatchet();
-}
-
-// ── Ratchet clicks (speed up as lever is pulled further) ──
-
-function ensureRatchet() {
-  if (ratchetTimer) return;
-  ratchetTimer = setInterval(ratchetTick, 16); // check every 16ms
-}
-
-function stopRatchet() {
-  clearInterval(ratchetTimer);
-  ratchetTimer = null;
-}
-
-function ratchetTick() {
-  if (leverPos < 10 || state !== 'idle') { stopRatchet(); return; }
-  // Interval goes from ~360ms (pos=10) down to ~55ms (pos=255)
-  const interval = Math.max(55, 360 - (leverPos / 255) * 305);
-  const now = Date.now();
-  if (now - lastClickMs >= interval) {
-    playRatchetClick();
-    lastClickMs = now;
-  }
-}
-
-function playRatchetClick() {
-  const { ctx, g } = masterGain(cfg.volume * 0.30);
-  const t    = ctx.currentTime;
-  const freq = 130 + (leverPos / 255) * 170; // pitch rises slightly with position
-
-  const osc  = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type            = 'square';
-  osc.frequency.value = freq;
-  osc.connect(gain);
-  gain.connect(g);
-  gain.gain.setValueAtTime(0.55, t);
-  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.016);
-  osc.start(t);
-  osc.stop(t  + 0.016);
-}
-
-// ── Deep thud when latch engages at bottom of travel ──
-function playLeverClunk() {
-  const { ctx, g } = masterGain(cfg.volume * 0.55);
-  const t = ctx.currentTime;
-  // Two overlapping low sine sweeps = satisfying mechanical thud
-  [[80, 35, 0.10], [130, 55, 0.06]].forEach(([f1, f2, dur]) => {
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(f1, t);
-    osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
-    osc.connect(gain);
-    gain.connect(g);
-    gain.gain.setValueAtTime(0.75, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.05);
-    osc.start(t);
-    osc.stop(t  + dur + 0.06);
-  });
-}
-
-document.getElementById('ble-btn').addEventListener('click', connectLever);
+// Initial UI render
+updateUI();
 </script>
 </body>
 </html>
