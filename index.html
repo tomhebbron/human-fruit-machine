@@ -800,7 +800,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.7';
+const VERSION = '2026-06-20.8';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -928,14 +928,27 @@ function clearHistory() { localStorage.removeItem('hfm_hist'); return []; }
 // ═══════════════════════════════════════════════════════════════
 let _ac = null;
 
+function _alog(...args) {
+  const t = new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+  console.log(`[FM Audio ${t}]`, ...args);
+}
+
 function getAc() {
   if (!_ac) {
     _ac = new (window.AudioContext || window.webkitAudioContext)();
+    _alog('AudioContext created, initial state:', _ac.state);
     _ac.onstatechange = () => {
-      if (_ac.state === 'suspended') _ac.resume().catch(() => {});
+      _alog('onstatechange →', _ac.state);
+      if (_ac.state === 'suspended') {
+        _alog('auto-resuming from suspended');
+        _ac.resume().catch(e => _alog('resume() error:', e));
+      }
     };
   }
-  if (_ac.state === 'suspended') _ac.resume().catch(() => {});
+  if (_ac.state === 'suspended') {
+    _alog('getAc(): state is suspended, calling resume()');
+    _ac.resume().catch(e => _alog('resume() error:', e));
+  }
   return _ac;
 }
 
@@ -944,23 +957,29 @@ function getAc() {
 // Must stay synchronous: any await would yield the gesture context and
 // cause iOS to silently reject resume() on the freshly-created AC.
 function recoverAudio() {
+  _alog('recoverAudio() called, old state:', _ac ? _ac.state : 'none');
   if (_ac) {
     _ac.close().catch(() => {});   // fire-and-forget; don't await
     _ac = null;
   }
   const ac = getAc();             // new AC created while still in gesture
+  _alog('recoverAudio(): new AC state after getAc():', ac.state);
   try {
     const buf = ac.createBuffer(1, 1, 22050);
     const src = ac.createBufferSource();
     src.buffer = buf; src.connect(ac.destination); src.start(0);
-  } catch(_) {}
-  ac.resume().catch(() => {});
+    _alog('recoverAudio(): silent unlock buffer started');
+  } catch(e) { _alog('recoverAudio(): silent buffer error:', e); }
+  ac.resume().catch(e => _alog('recoverAudio(): resume() error:', e));
   decodePendingSfx();
 }
 
 // Auto-recover on next tap after a call/Siri interruption
 function _autoRecover() {
-  if (_ac && _ac.state === 'interrupted') recoverAudio();
+  if (_ac && _ac.state === 'interrupted') {
+    _alog('_autoRecover(): interrupted — calling recoverAudio()');
+    recoverAudio();
+  }
 }
 document.addEventListener('touchstart', _autoRecover, { passive: true });
 document.addEventListener('click',      _autoRecover);
@@ -968,8 +987,10 @@ document.addEventListener('click',      _autoRecover);
 // Resume a suspended (not interrupted) context when the user returns to the tab.
 // Interrupted needs a user tap to recreate the context; suspended just needs resume().
 document.addEventListener('visibilitychange', () => {
+  _alog('visibilitychange:', document.visibilityState, '| AC state:', _ac ? _ac.state : 'none');
   if (document.visibilityState === 'visible' && _ac && _ac.state === 'suspended') {
-    _ac.resume().catch(() => {});
+    _alog('visibilitychange: resuming suspended AC');
+    _ac.resume().catch(e => _alog('resume() error:', e));
   }
 });
 
@@ -1629,17 +1650,18 @@ function _startAudio() {
   document.removeEventListener('touchstart', _startAudio);
   document.removeEventListener('click',      _startAudio);
   document.removeEventListener('keydown',    _startAudio);
+  _alog('_startAudio(): first gesture received');
   const ac = getAc();
+  _alog('_startAudio(): AC state after getAc():', ac.state);
   try {
-    // Silent 1-sample buffer: iOS requires an actual start() call in a trusted
-    // gesture to move the context from muted-but-running → actually audible.
     const buf = ac.createBuffer(1, 1, 22050);
     const src = ac.createBufferSource();
     src.buffer = buf;
     src.connect(ac.destination);
     src.start(0);
-  } catch (_) {}
-  ac.resume().catch(() => {});
+    _alog('_startAudio(): silent unlock buffer started');
+  } catch (e) { _alog('_startAudio(): silent buffer error:', e); }
+  ac.resume().catch(e => _alog('_startAudio(): resume() error:', e));
   decodePendingSfx();
 }
 document.addEventListener('touchstart', _startAudio, { passive: true });
@@ -1744,6 +1766,7 @@ document.getElementById('test-tone-btn').addEventListener('click', () => {
   const ac  = getAc();
   const out = document.getElementById('audio-diag-out');
   const t0  = ac.currentTime;
+  _alog('test-tone: state=', ac.state, 't=', t0.toFixed(3));
   try {
     const g = ac.createGain();
     g.gain.value = 0.5;
