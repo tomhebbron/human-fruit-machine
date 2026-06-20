@@ -69,6 +69,23 @@
     }
     #admin-btn:hover { color: white; border-color: rgba(255,255,255,0.45); }
 
+    #ble-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.25);
+      border-radius: 50%;
+      width: 2.4rem;
+      height: 2.4rem;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #ble-btn:hover   { color: white; border-color: rgba(255,255,255,0.45); }
+    #ble-btn.live    { color: var(--green); border-color: var(--green); }
+    #ble-btn.pairing { color: var(--gold);  border-color: var(--gold);
+                       animation: pulse 1s ease-in-out infinite; }
+
     /* ── REELS ── */
     #reels {
       display: flex;
@@ -444,7 +461,10 @@
 
     <header id="game-header">
       <div id="game-title">🎰 Human Fruit Machine</div>
-      <button id="admin-btn" title="Admin Panel">⚙️</button>
+      <div style="display:flex;gap:0.4rem;align-items:center">
+        <button id="ble-btn" title="Connect Bluetooth lever">📡</button>
+        <button id="admin-btn" title="Admin Panel">⚙️</button>
+      </div>
     </header>
 
     <div id="reels">
@@ -1141,6 +1161,177 @@ document.getElementById('clear-history').addEventListener('click', () => {
     buildStats();
   }
 });
+
+// ═══════════════════════════════════════════════════════════════
+//  BLUETOOTH LEVER
+//  Receives lever position (0–255) from ESP32 over BLE GATT.
+//  Plays ratchet clicks that speed up as lever is pulled.
+//  Triggers doSpin() on release (position drops after peak).
+//
+//  Requires Chrome on Windows/Mac/Android — not Safari or Firefox.
+// ═══════════════════════════════════════════════════════════════
+const BLE_SERVICE = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+const BLE_CHAR    = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+
+let bleDevice    = null;
+let leverPos     = 0;
+let peakPos      = 0;
+let releaseArmed = false;
+let clunkPlayed  = false;
+let ratchetTimer = null;
+let lastClickMs  = 0;
+
+function setBleStatus(s) {
+  const btn = document.getElementById('ble-btn');
+  btn.className = s;
+  btn.title = {
+    '':       'Connect Bluetooth lever',
+    pairing:  'Connecting…',
+    live:     'Lever connected  ·  click to disconnect',
+  }[s] ?? '';
+}
+
+async function connectLever() {
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth needs Chrome on Windows or Android.\nSafari and Firefox are not supported.');
+    return;
+  }
+
+  // Already connected — disconnect
+  if (bleDevice?.gatt?.connected) {
+    bleDevice.gatt.disconnect();
+    setBleStatus('');
+    return;
+  }
+
+  setBleStatus('pairing');
+  try {
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters:          [{ name: 'FruitMachineLever' }],
+      optionalServices: [BLE_SERVICE],
+    });
+
+    bleDevice.addEventListener('gattserverdisconnected', () => {
+      setBleStatus('');
+      stopRatchet();
+    });
+
+    const server  = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(BLE_SERVICE);
+    const chr     = await service.getCharacteristic(BLE_CHAR);
+
+    await chr.startNotifications();
+    chr.addEventListener('characteristicvaluechanged', e => {
+      onLeverData(e.target.value.getUint8(0));
+    });
+
+    setBleStatus('live');
+  } catch (err) {
+    setBleStatus('');
+    // NotFoundError = user closed the picker — not an error worth logging
+    if (err.name !== 'NotFoundError') console.error('BLE:', err);
+  }
+}
+
+function onLeverData(pos) {
+  leverPos = pos;
+
+  // Track peak so we can detect the release
+  if (pos > peakPos) peakPos = pos;
+
+  // Arm release detection once lever is meaningfully pulled
+  if (pos > 160 && !releaseArmed) releaseArmed = true;
+
+  // Clunk sound when lever reaches end of travel and latch engages
+  if (!clunkPlayed && pos > 220) {
+    clunkPlayed = true;
+    playLeverClunk();
+  }
+
+  // Release detected: was armed, now dropping quickly away from peak
+  if (releaseArmed && pos < peakPos - 60 && peakPos > 140) {
+    releaseArmed = false;
+    peakPos      = 0;
+    clunkPlayed  = false;
+    stopRatchet();
+    doSpin();
+    return;
+  }
+
+  // Lever returned to rest — reset all state
+  if (pos < 15) {
+    peakPos      = 0;
+    releaseArmed = false;
+    clunkPlayed  = false;
+    stopRatchet();
+    return;
+  }
+
+  // Keep ratchet running while pulling (only in idle state)
+  if (pos > 10 && state === 'idle') ensureRatchet();
+}
+
+// ── Ratchet clicks (speed up as lever is pulled further) ──
+
+function ensureRatchet() {
+  if (ratchetTimer) return;
+  ratchetTimer = setInterval(ratchetTick, 16); // check every 16ms
+}
+
+function stopRatchet() {
+  clearInterval(ratchetTimer);
+  ratchetTimer = null;
+}
+
+function ratchetTick() {
+  if (leverPos < 10 || state !== 'idle') { stopRatchet(); return; }
+  // Interval goes from ~360ms (pos=10) down to ~55ms (pos=255)
+  const interval = Math.max(55, 360 - (leverPos / 255) * 305);
+  const now = Date.now();
+  if (now - lastClickMs >= interval) {
+    playRatchetClick();
+    lastClickMs = now;
+  }
+}
+
+function playRatchetClick() {
+  const { ctx, g } = masterGain(cfg.volume * 0.30);
+  const t    = ctx.currentTime;
+  const freq = 130 + (leverPos / 255) * 170; // pitch rises slightly with position
+
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type            = 'square';
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(g);
+  gain.gain.setValueAtTime(0.55, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.016);
+  osc.start(t);
+  osc.stop(t  + 0.016);
+}
+
+// ── Deep thud when latch engages at bottom of travel ──
+function playLeverClunk() {
+  const { ctx, g } = masterGain(cfg.volume * 0.55);
+  const t = ctx.currentTime;
+  // Two overlapping low sine sweeps = satisfying mechanical thud
+  [[80, 35, 0.10], [130, 55, 0.06]].forEach(([f1, f2, dur]) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f1, t);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    osc.connect(gain);
+    gain.connect(g);
+    gain.gain.setValueAtTime(0.75, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur + 0.05);
+    osc.start(t);
+    osc.stop(t  + dur + 0.06);
+  });
+}
+
+document.getElementById('ble-btn').addEventListener('click', connectLever);
 </script>
 </body>
 </html>
