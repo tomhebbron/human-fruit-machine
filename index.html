@@ -514,19 +514,6 @@
     @keyframes party-hue { to { filter: hue-rotate(360deg) brightness(1.7); } }
     .party { animation: party-hue 0.4s linear 4; }
 
-    /* ── £1 a go badge ── */
-    #go-cost {
-      background: var(--gold);
-      color: #1a0d00;
-      font-weight: 900;
-      font-size: clamp(0.72rem, 2.5vw, 1rem);
-      padding: 0.25rem 0.65rem;
-      border-radius: 1rem;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
     /* ── Prize board ── */
     #prize-board {
       display: flex;
@@ -1299,7 +1286,6 @@ function hideBanner() { document.getElementById('prize-banner').className = ''; 
 
 function updatePrizeBoard() {
   document.getElementById('prize-board').innerHTML = [
-    `<span id="go-cost">£1 a go</span>`,
     `<span class="pb-entry pb-jackpot">⭐×3 → ${cfg.prizes.jackpot}</span>`,
     `<span class="pb-entry pb-three">3-of-a-kind → ${cfg.prizes.three}</span>`,
     `<span class="pb-entry pb-two">Pair → ${cfg.prizes.two}</span>`,
