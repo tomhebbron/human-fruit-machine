@@ -453,6 +453,7 @@
     }
     body.touch-device #mobile-bar { display: flex; }
     body.touch-device #app        { padding-bottom: 215px; }
+    body.no-coin #mob-coin-col, body.no-coin #coin-status { display: none; }
 
     #mob-coin-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
     #mob-coin-btn {
@@ -658,6 +659,21 @@
     <div id="tab-settings" class="tab-panel">
       <div class="settings-form">
         <div class="setting-group">
+          <h4>Game Mode</h4>
+          <div class="setting-row">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+              <input type="checkbox" id="s-coin" style="width:1.2rem;height:1.2rem">
+              <span>Require coin to play</span>
+            </label>
+            <p style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem">
+              <strong>On</strong> (default): players insert a £1 coin before each spin — the classic flow.<br>
+              <strong>Off</strong> (credit / wristband mode): no coin step. Players just pull the lever for
+              every go. Use this when a games-master is stamping wristbands for X-spin credits, like at the
+              school fete.
+            </p>
+          </div>
+        </div>
+        <div class="setting-group">
           <h4>Payout Odds</h4>
           <div class="setting-row">
             <label>3-of-a-kind chance <span id="lbl-three">5%</span></label>
@@ -808,7 +824,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.13';
+const VERSION = '2026-06-20.14';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -891,11 +907,15 @@ function evaluate(reels) {
 //  STORAGE
 // ═══════════════════════════════════════════════════════════════
 const DEFAULTS = {
+  requireCoin:  true,   // false = "credit mode": no coin step, just pull the lever
   threeChance:  0.05,
   twoChance:    0.20,
   pityCutoff:   8,
-  spinDuration: 3000,
-  reelDelay:    900,
+  // Spin timing is tuned so the three reels stop within the ~3.2s Jägerhaus
+  // spin clip, letting that clip's own built-in stop clunks line up with the
+  // reels. Operators can fine-tune by ear in Settings → Timing.
+  spinDuration: 1600,
+  reelDelay:    650,
   volume:       0.6,
   prizes: {
     two:     'Sticker or lolly! 🍭',
@@ -1173,21 +1193,53 @@ function playCustom(key, vol) {
 }
 
 // Bundled static SFX files served from sounds/ — used before falling back to synth.
+// (URL-encode spaces/accents so the path resolves on GitHub Pages.)
 const _BUNDLED_FILES = {
-  coin:    'sounds/freesound_community-cash-register-purchase-87313.mp3',
-  ahem:    'sounds/mlg-airhorn.mp3',
-  ching:   'sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3',
-  win:     'sounds/floraphonic-you-win-sequence-1-183948.mp3',
-  jackpot: 'sounds/Jackpot-Millionaire.mp3',
-  party:   'sounds/floraphonic-you-win-sequence-2-183949.mp3',
-  crowd:   'sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3',
-  spin:    'sounds/SlotMachine%20J%C3%A4gerhuus.mp3',
+  coin:      'sounds/freesound_community-cash-register-purchase-87313.mp3',
+  spin:      'sounds/SlotMachine%20J%C3%A4gerhuus.mp3',  // reels — has built-in stop clunks
+  pairWin:   'sounds/floraphonic-you-win-sequence-1-183948.mp3',
+  tripleWin: 'sounds/floraphonic-you-win-sequence-2-183949.mp3',
+  jackpot:   'sounds/Jackpot-Millionaire.mp3',
+  egg1:      'sounds/mlg-airhorn.mp3',                    // secret ⭐ button
+  egg2:      'sounds/muttley-wheeze-or-laugh.mp3',        // secret 👥 button (upload to enable)
 };
+
+// Play a bundled file through the (already-unlocked) pool. Returns true
+// optimistically — fine for files we know exist.
 function playBundled(key, vol) {
   const f = _BUNDLED_FILES[key];
   if (!f) return false;
   playUrl(f, vol);
   return true;
+}
+
+// Bundled file via a dedicated, preloaded element so a missing file (404) flips a
+// 'failed' flag and callers can fall back to a synth. Used for sounds that may
+// not be present yet (e.g. the Muttley clip). Preload them in _startAudio().
+const _bEl = {}, _bFailed = {};
+function bundledEl(key) {
+  const src = _BUNDLED_FILES[key];
+  if (!src) return null;
+  if (!_bEl[key]) {
+    const a = new Audio(src);
+    a.setAttribute('playsinline', '');
+    a.preload = 'auto';
+    a.addEventListener('error', () => { _bFailed[key] = true; _alog('bundled missing:', src); });
+    _bEl[key] = a;
+  }
+  return _bEl[key];
+}
+function playBundledEl(key, vol) {
+  if (_bFailed[key]) return false;
+  const a = bundledEl(key);
+  if (!a) return false;
+  try {
+    a.pause(); a.currentTime = 0;
+    a.volume = Math.max(0, Math.min(1, vol));
+    const p = a.play();
+    if (p && p.catch) p.catch(e => _alog('bundledEl play rejected', key, e.name));
+    return true;
+  } catch (e) { return false; }
 }
 
 // Decode any pending raw buffers (called after first user gesture)
@@ -1231,7 +1283,6 @@ function playCoinInserted(vol) {
 // 😤 Polite ahem (no coin)
 function playAhem(vol) {
   if (playCustom('ahem', vol)) return;
-  if (playBundled('ahem', vol)) return;
   playBaked('ahem', 0.75, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.42; g.connect(dest);
     function vocalBurst(startT, freq, q, dur, amp) {
@@ -1295,47 +1346,15 @@ function playRatchetClick() {
   });
 }
 
-// Deep thud when lever hits bottom
-function playLeverClunk(vol) {
-  playBaked('clunk', 0.25, vol, (ac, dest) => {
-    const g = ac.createGain(); g.gain.value = 0.6; g.connect(dest);
-    [[85, 38, 0.11], [135, 58, 0.06]].forEach(([f1, f2, dur]) => {
-      const osc  = ac.createOscillator();
-      const gain = ac.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f1, 0);
-      osc.frequency.exponentialRampToValueAtTime(f2, dur);
-      osc.connect(gain); gain.connect(g);
-      gain.gain.setValueAtTime(0.78, 0);
-      gain.gain.exponentialRampToValueAtTime(0.001, dur + 0.05);
-      osc.start(0); osc.stop(dur + 0.06);
-    });
-  });
-}
+// NOTE: the lever "clunk" and per-reel "ching" are intentionally silent in the
+// current sound mapping — the Jägerhaus spin clip already contains the
+// mechanical lever/stop sounds, so duplicating them muddied the mix.
 
-// Bell ching for each reel stop
-function playChing(vol) {
-  if (playCustom('ching', vol)) return;
-  if (playBundled('ching', vol)) return;
-  playBaked('ching', 2.1, vol, (ac, dest) => {
-    const g = ac.createGain(); g.gain.value = 0.48; g.connect(dest);
-    [[880, 1], [1320, 0.55], [1760, 0.28]].forEach(([freq, amp]) => {
-      const osc  = ac.createOscillator();
-      const gain = ac.createGain();
-      osc.type = 'triangle'; osc.frequency.value = freq;
-      osc.connect(gain); gain.connect(g);
-      gain.gain.setValueAtTime(amp, 0);
-      gain.gain.exponentialRampToValueAtTime(0.001, 2.0);
-      osc.start(0); osc.stop(2.0);
-    });
-  });
-}
-
-// Ascending arpeggio for pair / 3-of-a-kind
-function playWin(vol) {
-  if (playCustom('win', vol)) return;
-  if (playBundled('win', vol)) return;
-  playBaked('win', 1.2, vol, (ac, dest) => {
+// Pair win — modest fanfare (bundled: floraphonic "you win" sequence 1)
+function playPairWin(vol) {
+  if (playCustom('pairWin', vol)) return;
+  if (playBundled('pairWin', vol)) return;
+  playBaked('pairWin', 1.2, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.38; g.connect(dest);
     [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
       const osc  = ac.createOscillator();
@@ -1346,6 +1365,25 @@ function playWin(vol) {
       gain.gain.setValueAtTime(0.4, t);
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
       osc.start(t); osc.stop(t + 0.55);
+    });
+  });
+}
+
+// Three-of-a-kind win — bigger fanfare (bundled: floraphonic "you win" sequence 2)
+function playTripleWin(vol) {
+  if (playCustom('tripleWin', vol)) return;
+  if (playBundled('tripleWin', vol)) return;
+  playBaked('tripleWin', 1.5, vol, (ac, dest) => {
+    const g = ac.createGain(); g.gain.value = 0.4; g.connect(dest);
+    [523.25, 659.25, 783.99, 1046.5, 1318.5, 1568].forEach((freq, i) => {
+      const osc  = ac.createOscillator();
+      const gain = ac.createGain();
+      const t    = i * 0.12;
+      osc.type = 'triangle'; osc.frequency.value = freq;
+      osc.connect(gain); gain.connect(g);
+      gain.gain.setValueAtTime(0.45, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+      osc.start(t); osc.stop(t + 0.6);
     });
   });
 }
@@ -1430,19 +1468,38 @@ function playNoWinSynth(vol) {
   });
 }
 
-// Spin loop — played on a dedicated looping <audio>; stop by pausing it.
-// Uses bundled slot machine MP3 if present; falls back to baked synth click-bed.
+// Spin sound — played on a dedicated <audio>; stop by pausing it.
+// Uses the bundled Jägerhaus clip played ONCE (it contains its own spin-up and
+// reel-stop clunks, so it must not loop). Falls back to a looping synth
+// click-bed only if the clip is missing.
 function startSpinSound(vol) {
   _spinWant = true;
   const se = getSpinEl();
+  // 1) Custom upload (admin SFX tab) takes priority.
+  const customAb = rawSfx.spin;
+  if (customAb) {
+    if (!_customUrl.spin) {
+      _customUrl.spin = URL.createObjectURL(
+        new Blob([customAb.slice()], { type: rawSfxType.spin || 'audio/mpeg' }));
+    }
+    se.loop = false;
+    if (se.src !== _customUrl.spin) se.src = _customUrl.spin;
+    se.volume = Math.max(0, Math.min(1, vol));
+    try { se.currentTime = 0; } catch(_){}
+    se.play().catch(e => _alog('spin (custom) play rejected', e.name));
+    return () => { _spinWant = false; if (_spinEl) { try { _spinEl.pause(); } catch(_){} } };
+  }
+  // 2) Bundled Jägerhaus clip (default).
   const spinUrl = _BUNDLED_FILES.spin;
   if (spinUrl) {
+    se.loop = false;                         // clip has built-in stops — play once
     if (se.src !== spinUrl) se.src = spinUrl;
     se.volume = Math.max(0, Math.min(1, vol));
     try { se.currentTime = 0; } catch(_){}
     se.play().catch(e => _alog('spin play rejected', e.name));
     return () => { _spinWant = false; if (_spinEl) { try { _spinEl.pause(); } catch(_){} } };
   }
+  se.loop = true;                            // synth click-bed loops
   bakeSound('spin', 1.0, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.22; g.connect(dest);
     let t = 0;
@@ -1466,9 +1523,8 @@ function startSpinSound(vol) {
   return () => { _spinWant = false; if (_spinEl) { try { _spinEl.pause(); } catch(_){} } };
 }
 
-// 🎉 Party ascending arpeggio
+// 🎉 Party ascending arpeggio (synth fallback for the secret ⭐ button)
 function playParty(vol) {
-  if (playBundled('party', vol)) return;
   playBaked('party', 0.85, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.38; g.connect(dest);
     [523, 659, 784, 1047, 1319].forEach((freq, i) => {
@@ -1484,9 +1540,8 @@ function playParty(vol) {
   });
 }
 
-// 👥 Crowd "ooooh" noise burst
+// 👥 Crowd "ooooh" noise burst (synth fallback for the secret 👥 button)
 function playCrowdOoh(vol) {
-  if (playBundled('crowd', vol)) return;
   playBaked('crowd', 1.0, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.32; g.connect(dest);
     [260, 330, 420].forEach((freq, i) => {
@@ -1511,8 +1566,9 @@ function playCrowdOoh(vol) {
 
 // Easter egg handlers
 function eggParty() {
-  if (playCustom('egg1', cfg.volume)) return; // custom override via SFX tab
-  playParty(cfg.volume);
+  if (playCustom('egg1', cfg.volume)) return;       // custom override via SFX tab
+  if (!playBundledEl('egg1', cfg.volume))           // bundled airhorn (if present)
+    playParty(cfg.volume);                          // synth fallback
   const reels = document.getElementById('reels');
   reels.classList.add('party');
   setTimeout(() => reels.classList.remove('party'), 1600);
@@ -1528,17 +1584,22 @@ function eggForceJackpot() {
 }
 
 function eggCrowd() {
-  if (playCustom('egg2', cfg.volume)) return;
-  playCrowdOoh(cfg.volume);
+  if (playCustom('egg2', cfg.volume)) return;        // custom override via SFX tab
+  if (!playBundledEl('egg2', cfg.volume))            // bundled Muttley (if uploaded)
+    playCrowdOoh(cfg.volume);                         // synth fallback
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  STATE  nocoin → ready → pulling → spinning → result
+//  STATE  (coin mode)   nocoin → ready → pulling → spinning → result
+//         (credit mode)          ready → pulling → spinning → result
 // ═══════════════════════════════════════════════════════════════
 const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-let state        = 'nocoin';
-let leverLevel   = 0;
 let cfg          = loadCfg();
+// Resting state with no game in progress: 'nocoin' if a coin is required,
+// otherwise straight to 'ready' so players can just pull the lever.
+function idleState() { return cfg.requireCoin ? 'nocoin' : 'ready'; }
+let state        = idleState();
+let leverLevel   = 0;
 let history      = loadHistory();
 let stopSpin     = null;
 let forceJackpot = false;           // Easter-egg cheat: force next spin to jackpot
@@ -1632,7 +1693,7 @@ function updateUI() {
       label.textContent = 'SPIN!';
       hint.textContent  = isTouchDevice ? 'Drag the lever below!' : 'Pull the lever!';
       cs.className      = 'ready';
-      cs.innerHTML      = '✅ Ready!';
+      cs.innerHTML      = cfg.requireCoin ? '✅ Ready!' : '🎰 Pull the lever!';
       break;
     case 'pulling':
       btn.disabled      = false;
@@ -1651,7 +1712,7 @@ function updateUI() {
     case 'result':
       btn.disabled      = false;
       label.textContent = 'Play Again!';
-      hint.textContent  = 'or insert another coin';
+      hint.textContent  = cfg.requireCoin ? 'or insert another coin' : 'Pull the lever to play again!';
       cs.className      = '';
       cs.innerHTML      = '';
       break;
@@ -1679,17 +1740,21 @@ function onCoin() {
   if (state === 'result') { hideBanner(); resetReels(); }
   stopRatchet();
   setLeverLevel(0);
-  playCoinInserted(cfg.volume);
+  if (cfg.requireCoin) playCoinInserted(cfg.volume);  // no coin sound in credit mode
   state = 'ready';
   updateUI();
 }
 
 function onLeverLevel(n) {
+  // Credit mode: starting a fresh pull after a result clears the board so the
+  // player can go straight into the next spin (there's no coin step to reset it).
+  if (!cfg.requireCoin && state === 'result' && n > 0) {
+    hideBanner(); resetReels(); state = 'ready'; updateUI();
+  }
   if (state !== 'ready' && state !== 'pulling') return;
   if (n === leverLevel) return;
   setLeverLevel(n);
   if (n > 0) {
-    if (n === 5) playLeverClunk(cfg.volume);
     state = 'pulling';
     ensureRatchet();
   } else {
@@ -1707,6 +1772,7 @@ function setLeverLevel(n) {
 }
 
 function onAhem() {
+  if (!cfg.requireCoin) return;   // no "you forgot a coin" nag in credit mode
   if (state !== 'nocoin' && state !== 'result') return;
   playAhem(cfg.volume);
 }
@@ -1718,7 +1784,7 @@ function onSpace() {
     resetReels();
     stopRatchet();
     setLeverLevel(0);
-    state = 'nocoin';
+    state = idleState();
     updateUI();
     return;
   }
@@ -1751,6 +1817,8 @@ function startSpin() {
   });
 
   [0,1,2].forEach(startReelAnim);
+  // The Jägerhaus spin clip plays right through and supplies its own reel-stop
+  // clunks, so we do NOT stop it or play a per-reel ching as each reel locks.
   stopSpin = startSpinSound(cfg.volume);
   sendToEsp32({ t: 'spin_start' });
 
@@ -1758,24 +1826,21 @@ function startSpin() {
   const rd = cfg.reelDelay;
 
   setTimeout(() => {
-    if (stopSpin) { stopSpin(); stopSpin = null; }
     lockReel(0, chosenReels[0]);
-    playChing(cfg.volume);
     sendToEsp32({ t: 'reel', n: 0 });
   }, sd);
 
   setTimeout(() => {
     lockReel(1, chosenReels[1]);
-    playChing(cfg.volume);
     sendToEsp32({ t: 'reel', n: 1 });
   }, sd + rd);
 
   setTimeout(() => {
     lockReel(2, chosenReels[2]);
-    playChing(cfg.volume);
     sendToEsp32({ t: 'reel', n: 2 });
 
     setTimeout(() => {
+      if (stopSpin) { stopSpin(); stopSpin = null; }   // end the spin clip at the result
       const result = evaluate(chosenReels);
       history = appendPlay({
         reels: chosenReels.map(f => f.emoji + ' ' + f.name),
@@ -1784,9 +1849,10 @@ function startSpin() {
       });
       showBanner(result);
       sendToEsp32({ t: 'result', type: result.type });
-      if (result.type === 'jackpot')                        playJackpot(cfg.volume);
-      else if (result.type === 'three' || result.type === 'two') playWin(cfg.volume);
-      else                                                  playNoWin(cfg.volume);
+      if      (result.type === 'jackpot') playJackpot(cfg.volume);
+      else if (result.type === 'three')   playTripleWin(cfg.volume);
+      else if (result.type === 'two')     playPairWin(cfg.volume);
+      else                                playNoWin(cfg.volume);
       state = 'result';
       updateUI();
     }, 600);
@@ -1824,12 +1890,13 @@ function connectEsp32Ws() {
       try {
         const msg = JSON.parse(e.data);
         switch (msg.t) {
-          case 'coin':    onCoin();            break;
+          case 'coin':    if (cfg.requireCoin) onCoin();   break;
           case 'lever':   onLeverLevel(msg.n); break;
           case 'release':
             onLeverLevel(0);
-            // Small delay so level-0 processes before spin/ahem
-            setTimeout(() => msg.coin ? onSpace() : onAhem(), 60);
+            // Small delay so level-0 processes before spin/ahem.
+            // In credit mode the coin gate is bypassed — every release is a spin.
+            setTimeout(() => (msg.coin || !cfg.requireCoin) ? onSpace() : onAhem(), 60);
             break;
           case 'egg':
             [eggParty, eggForceJackpot, eggCrowd][msg.n]?.();
@@ -1854,7 +1921,7 @@ document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   const k = e.key.toLowerCase();
 
-  if (k === 'c')             { onCoin();             return; }
+  if (k === 'c')             { if (cfg.requireCoin) onCoin();  return; }
   if (k === 'a')             { onAhem();             return; }
   if (k === ' ')             { e.preventDefault(); document.getElementById('spin-btn').classList.add('pressed'); onSpace(); return; }
   if (k === 'enter')         { onSpace();            return; }
@@ -1869,7 +1936,8 @@ document.addEventListener('keyup', () => {
 });
 
 document.getElementById('spin-btn').addEventListener('click', () => {
-  // Button tap acts as either Space (spin/reset) or coin insert if no coin yet
+  // Button tap acts as either Space (spin/reset) or coin insert if no coin yet.
+  // In credit mode there is no 'nocoin' state so it always behaves as Space.
   if (state === 'nocoin') onCoin();
   else onSpace();
 });
@@ -1890,7 +1958,9 @@ function _startAudio() {
   const la = getLoseAudio();
   const se = getSpinEl();
   if (!se.src) se.src = _BUNDLED_FILES.spin || makeWavUrl(0, 0.05);
-  [la, se].forEach(el => {
+  const e1 = bundledEl('egg1');   // airhorn (file present)
+  const e2 = bundledEl('egg2');   // Muttley (may 404 — handled by bundledEl)
+  [la, se, e1, e2].filter(Boolean).forEach(el => {
     try {
       el.muted = true;
       const p = el.play();
@@ -1972,6 +2042,7 @@ function buildLog() {
 }
 
 function syncSettingsUI() {
+  document.getElementById('s-coin').checked = !!cfg.requireCoin;
   document.getElementById('s-three').value = Math.round(cfg.threeChance * 100);
   document.getElementById('s-two').value   = Math.round(cfg.twoChance   * 100);
   document.getElementById('s-pity').value  = cfg.pityCutoff;
@@ -2103,6 +2174,7 @@ document.querySelectorAll('.tab').forEach(btn => {
 
 document.getElementById('save-settings').addEventListener('click', () => {
   cfg = {
+    requireCoin:  document.getElementById('s-coin').checked,
     threeChance:  parseInt(document.getElementById('s-three').value) / 100,
     twoChance:    parseInt(document.getElementById('s-two').value)   / 100,
     pityCutoff:   parseInt(document.getElementById('s-pity').value),
@@ -2122,6 +2194,13 @@ document.getElementById('save-settings').addEventListener('click', () => {
   };
   saveCfg(cfg);
   updatePrizeBoard();
+  applyCoinMode();
+  // If we're between games when the mode flips, drop into the right idle state
+  // (otherwise the player can be stuck on 'nocoin' with no coin slot showing).
+  if (state === 'nocoin' || state === 'ready' || state === 'result') {
+    state = idleState();
+    updateUI();
+  }
   const btn = document.getElementById('save-settings');
   btn.textContent = 'Saved! ✅';
   setTimeout(() => { btn.textContent = 'Save Settings ✅'; }, 1800);
@@ -2134,7 +2213,11 @@ document.getElementById('clear-history').addEventListener('click', () => {
   }
 });
 
+// Apply credit-mode body class (hides the mobile coin button + coin-status pill).
+function applyCoinMode() { document.body.classList.toggle('no-coin', !cfg.requireCoin); }
+
 // Initial UI render
+applyCoinMode();
 updateUI();
 updatePrizeBoard();
 document.getElementById('ver').textContent = VERSION;
@@ -2142,15 +2225,20 @@ document.getElementById('ver').textContent = VERSION;
 // ═══════════════════════════════════════════════════════════════
 //  CUSTOM SFX  (IndexedDB persistence)
 // ═══════════════════════════════════════════════════════════════
+// SFX-upload slots. These are what the operator can replace from the admin panel.
+// Each play function tries: custom upload → bundled file → synth fallback.
+// 'ching' (reel-stop bell) and 'clunk' (lever-bottom thud) are intentionally
+// absent — the Jägerhaus spin clip already supplies those mechanical sounds.
 const SFX_DEFS = [
-  { key: 'coin',    label: '🪙 Coin inserted' },
-  { key: 'ahem',    label: '😤 Ahem (no coin)' },
-  { key: 'ching',   label: '🔔 Reel stop ching' },
-  { key: 'win',     label: '🎉 Win fanfare' },
-  { key: 'jackpot', label: '⭐ Jackpot fanfare' },
-  { key: 'nowin',   label: '😔 No-win wah-wah' },
-  { key: 'egg1',    label: '🎊 Easter egg 1 (Q / ⭐ button)' },
-  { key: 'egg2',    label: '🎊 Easter egg 2 (E / 👥 button)' },
+  { key: 'coin',      label: '🪙 Coin inserted' },
+  { key: 'ahem',      label: '😤 Ahem (no coin)' },
+  { key: 'spin',      label: '🎰 Spinning reels (plays once; should include stop sounds)' },
+  { key: 'pairWin',   label: '🎉 Pair win fanfare' },
+  { key: 'tripleWin', label: '🎉🎉 Three-of-a-kind fanfare' },
+  { key: 'jackpot',   label: '⭐ Jackpot fanfare' },
+  { key: 'nowin',     label: '😔 No-win sound (sad trombone)' },
+  { key: 'egg1',      label: '🎊 Secret button 1 (Q / ⭐) — airhorn' },
+  { key: 'egg2',      label: '🎊 Secret button 2 (E / 👥) — Muttley' },
 ];
 
 let _sfxDb = null;
@@ -2323,10 +2411,10 @@ loadSfxFromDb();
 if (isTouchDevice) {
   document.body.classList.add('touch-device');
 
-  // Coin button
+  // Coin button — the button itself is hidden in credit mode (body.no-coin CSS).
   document.getElementById('mob-coin-btn').addEventListener('pointerdown', () => {
     unlockPool();
-    onCoin();
+    if (cfg.requireCoin) onCoin();
   });
 
   // Lever drag — knob starts at top:8px, max drag 86px (bottom of knob = bottom of track)
