@@ -140,20 +140,58 @@
       font-weight: 700;
     }
 
-    .reel-emoji {
-      font-size: clamp(3rem, 10vw, 7rem);
-      line-height: 1;
+    /* Drum strip — three faces visible through a cylindrical-perspective window */
+    .reel-drum {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.05rem;
+      perspective: 220px;
+      perspective-origin: 50% 50%;
+    }
+    .reel-face {
       display: block;
+      text-align: center;
+      line-height: 1;
+      transform-style: preserve-3d;
+    }
+    .reel-face.center {
+      font-size: clamp(3rem, 10vw, 7rem);
+      transition: filter 0.25s;
+    }
+    .reel-face.above {
+      font-size: clamp(1.4rem, 3.8vw, 2.4rem);
+      transform: rotateX(44deg) scaleY(0.5);
+      transform-origin: bottom center;
+      opacity: 0.28;
+    }
+    .reel-face.below {
+      font-size: clamp(1.4rem, 3.8vw, 2.4rem);
+      transform: rotateX(-44deg) scaleY(0.5);
+      transform-origin: top center;
+      opacity: 0.28;
     }
 
-    .reel.spinning .reel-emoji {
-      filter: blur(3px);
-      animation: spin-flicker 0.07s steps(1, end) infinite;
+    @keyframes drum-roll {
+      from { transform: translateY(-7px); }
+      to   { transform: translateY(7px);  }
     }
-
     @keyframes spin-flicker {
       0%  { opacity: 1;    }
       50% { opacity: 0.65; }
+    }
+    .reel.spinning .reel-drum {
+      animation: drum-roll 0.14s ease-in-out infinite alternate;
+    }
+    .reel.spinning .reel-face.center {
+      filter: blur(3px);
+      animation: spin-flicker 0.07s steps(1, end) infinite;
+    }
+    .reel.spinning .reel-face.above,
+    .reel.spinning .reel-face.below {
+      filter: blur(4px);
+      opacity: 0.15;
     }
 
     .reel-name {
@@ -257,6 +295,15 @@
       cursor: not-allowed;
       transform: none !important;
       box-shadow: 0 8px 0 #7a0000;
+      animation: none !important;
+    }
+
+    @keyframes btn-ready {
+      from { box-shadow: 0 8px 0 #7a0000, 0 0 18px rgba(255,60,60,0.2); }
+      to   { box-shadow: 0 8px 0 #7a0000, 0 0 60px rgba(255,80,80,0.75); }
+    }
+    #spin-btn.ready {
+      animation: btn-ready 0.55s ease-in-out infinite alternate;
     }
 
     .btn-icon { font-size: clamp(1.4rem, 4vw, 2.2rem); }
@@ -595,18 +642,30 @@
       <div id="reels">
         <div class="reel" id="reel-0">
           <div class="reel-label">Volunteer 1</div>
-          <span class="reel-emoji" id="emoji-0">🍒</span>
-          <div class="reel-name"  id="name-0"></div>
+          <div class="reel-drum">
+            <span class="reel-face above" id="above-0">🍊</span>
+            <span class="reel-face center" id="emoji-0">🍒</span>
+            <span class="reel-face below" id="below-0">🍋</span>
+          </div>
+          <div class="reel-name" id="name-0"></div>
         </div>
         <div class="reel" id="reel-1">
           <div class="reel-label">Volunteer 2</div>
-          <span class="reel-emoji" id="emoji-1">🍋</span>
-          <div class="reel-name"  id="name-1"></div>
+          <div class="reel-drum">
+            <span class="reel-face above" id="above-1">🍒</span>
+            <span class="reel-face center" id="emoji-1">🍋</span>
+            <span class="reel-face below" id="below-1">🍇</span>
+          </div>
+          <div class="reel-name" id="name-1"></div>
         </div>
         <div class="reel" id="reel-2">
           <div class="reel-label">Volunteer 3</div>
-          <span class="reel-emoji" id="emoji-2">🍊</span>
-          <div class="reel-name"  id="name-2"></div>
+          <div class="reel-drum">
+            <span class="reel-face above" id="above-2">🍋</span>
+            <span class="reel-face center" id="emoji-2">🍊</span>
+            <span class="reel-face below" id="below-2">🍒</span>
+          </div>
+          <div class="reel-name" id="name-2"></div>
         </div>
       </div>
 
@@ -751,6 +810,10 @@
             <label>Volunteer preview after (s) — 0 = instantly when spin starts</label>
             <input type="number" id="s-volrev" min="0" max="15" step="0.1" value="0" style="width:5rem">
           </div>
+          <div class="setting-row">
+            <label>Auto-reset after result (s) — 0 = manual only</label>
+            <input type="number" id="s-autoreset" min="0" max="60" step="1" value="8" style="width:5rem">
+          </div>
         </div>
         <div class="setting-group">
           <h4>Sound</h4>
@@ -877,7 +940,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.19';
+const VERSION = '2026-06-20.20';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -969,6 +1032,7 @@ const DEFAULTS = {
   reelStops:       [1890, 2890, 3890],
   spinEnd:         5500,   // when win/lose fanfare plays (after clip finishes)
   volunteerReveal: 0,      // ms after spin-start to show volunteer preview (0 = instant)
+  autoReset:    8,         // seconds after result banner before auto-resetting (0 = manual only)
   volume:       0.6,
   prizes: {
     two:     'Sticker or lolly! 🍭',
@@ -1250,9 +1314,9 @@ function playCustom(key, vol) {
 const _BUNDLED_FILES = {
   coin:      'sounds/freesound_community-cash-register-purchase-87313.mp3',
   spin:      'sounds/slot-machine-spin.mp3',          // reels — has built-in stop clunks
-  pairWin:   'sounds/floraphonic-you-win-sequence-1-183948.mp3',
-  tripleWin: 'sounds/floraphonic-you-win-sequence-2-183949.mp3',
-  jackpot:   'sounds/Jackpot-Millionaire.mp3',
+  pairWin:   'sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3',
+  tripleWin: 'sounds/floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3',
+  jackpot:   'sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3',
   egg1:      'sounds/mlg-airhorn.mp3',                    // secret ⭐ button
   egg2:      'sounds/muttley-wheeze-or-laugh.mp3',        // secret 👥 button (upload to enable)
 };
@@ -1651,30 +1715,40 @@ let cfg          = loadCfg();
 // Resting state with no game in progress: 'nocoin' if a coin is required,
 // otherwise straight to 'ready' so players can just pull the lever.
 function idleState() { return cfg.requireCoin ? 'nocoin' : 'ready'; }
-let state        = idleState();
-let leverLevel   = 0;
-let history      = loadHistory();
-let stopSpin     = null;
-let forceJackpot = false;           // Easter-egg cheat: force next spin to jackpot
+let state          = idleState();
+let leverLevel     = 0;
+let history        = loadHistory();
+let stopSpin       = null;
+let autoResetTimer = null;
+let forceJackpot   = false;           // Easter-egg cheat: force next spin to jackpot
 const rawSfx     = {};              // key → ArrayBuffer  (raw uploaded bytes)
 const rawSfxType = {};              // key → MIME type    (for HTML5 blob playback)
 const customSfx  = {};              // key → AudioBuffer  (decoded; legacy/diag only)
+
+function cancelAutoReset() {
+  if (autoResetTimer) { clearTimeout(autoResetTimer); autoResetTimer = null; }
+}
 
 // ── Reel animation ──
 const reelTimers = [null, null, null];
 
 function startReelAnim(i) {
   document.getElementById('reel-' + i).className = 'reel spinning';
-  document.getElementById('name-'  + i).textContent = '';
+  document.getElementById('name-' + i).textContent = '';
+  const pick = () => FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
   reelTimers[i] = setInterval(() => {
-    document.getElementById('emoji-' + i).textContent =
-      FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
+    document.getElementById('emoji-' + i).textContent = pick();
+    document.getElementById('above-' + i).textContent = pick();
+    document.getElementById('below-' + i).textContent = pick();
   }, 72);
 }
 
 function lockReel(i, fruit) {
   clearInterval(reelTimers[i]);
+  const pick = () => FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
   document.getElementById('emoji-' + i).textContent = fruit.emoji;
+  document.getElementById('above-' + i).textContent = pick();
+  document.getElementById('below-' + i).textContent = pick();
   document.getElementById('name-'  + i).textContent = fruit.name;
   document.getElementById('reel-'  + i).className   = 'reel stopped';
 }
@@ -1736,6 +1810,10 @@ function updateUI() {
   const hint  = document.getElementById('spin-hint');
   const cs    = document.getElementById('coin-status');
 
+  const isReady = (state === 'ready' || state === 'pulling');
+  btn.classList.toggle('ready', isReady);
+  sendToEsp32({ t: 'state', s: state });
+
   switch (state) {
     case 'nocoin':
       btn.disabled      = true;
@@ -1792,6 +1870,7 @@ function isPitying() {
 // ═══════════════════════════════════════════════════════════════
 
 function onCoin() {
+  cancelAutoReset();
   if (state === 'spinning') return;
   if (state === 'result') { hideBanner(); resetReels(); }
   stopRatchet();
@@ -1802,6 +1881,7 @@ function onCoin() {
 }
 
 function onLeverLevel(n) {
+  if (state === 'result' && n > 0) cancelAutoReset();
   // Credit mode: starting a fresh pull after a result clears the board so the
   // player can go straight into the next spin (there's no coin step to reset it).
   if (!cfg.requireCoin && state === 'result' && n > 0) {
@@ -1834,6 +1914,7 @@ function onAhem() {
 }
 
 function onSpace() {
+  cancelAutoReset();
   // Reset after result
   if (state === 'result') {
     hideBanner();
@@ -1910,6 +1991,13 @@ function startSpin() {
     else                                playNoWin(cfg.volume);
     state = 'result';
     updateUI();
+    if (cfg.autoReset > 0) {
+      autoResetTimer = setTimeout(() => {
+        autoResetTimer = null;
+        hideBanner(); resetReels();
+        state = idleState(); updateUI();
+      }, cfg.autoReset * 1000);
+    }
   }, te);
 }
 
@@ -2105,7 +2193,8 @@ function syncSettingsUI() {
   document.getElementById('s-reel1').value   = (rs[1] / 1000).toFixed(2);
   document.getElementById('s-reel2').value   = (rs[2] / 1000).toFixed(2);
   document.getElementById('s-spinend').value = ((cfg.spinEnd || 5500) / 1000).toFixed(2);
-  document.getElementById('s-volrev').value  = ((cfg.volunteerReveal ?? 0) / 1000).toFixed(2);
+  document.getElementById('s-volrev').value    = ((cfg.volunteerReveal ?? 0) / 1000).toFixed(2);
+  document.getElementById('s-autoreset').value = (cfg.autoReset ?? 8).toString();
   document.getElementById('s-vol').value   = Math.round(cfg.volume * 100);
   document.getElementById('s-prize-two').value     = cfg.prizes.two;
   document.getElementById('s-prize-three').value   = cfg.prizes.three;
@@ -2240,8 +2329,9 @@ document.getElementById('save-settings').addEventListener('click', () => {
       Math.round(parseFloat(document.getElementById('s-reel1').value)   * 1000),
       Math.round(parseFloat(document.getElementById('s-reel2').value)   * 1000),
     ],
-    spinEnd:         Math.round(parseFloat(document.getElementById('s-spinend').value) * 1000),
-    volunteerReveal: Math.round(parseFloat(document.getElementById('s-volrev').value)  * 1000),
+    spinEnd:         Math.round(parseFloat(document.getElementById('s-spinend').value)   * 1000),
+    volunteerReveal: Math.round(parseFloat(document.getElementById('s-volrev').value)    * 1000),
+    autoReset:       parseInt(document.getElementById('s-autoreset').value)              || 0,
     volume:       parseInt(document.getElementById('s-vol').value) / 100,
     prizes: {
       two:     document.getElementById('s-prize-two').value,
