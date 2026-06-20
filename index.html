@@ -788,7 +788,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.1';
+const VERSION = '2026-06-20.2';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1570,8 +1570,30 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   else onSpace();
 });
 
-// Unlock Web Audio on first tap (important for iOS) and decode any pending SFX
-document.addEventListener('pointerdown', () => { getAc(); decodePendingSfx(); }, { once: true });
+// iOS 17 only recognises touchstart/click/keydown as trusted events for audio unlock.
+// pointerdown is NOT trusted on iOS 17 — that is why audio was silent.
+// touchstart fires before pointerdown so the context is running by the time any
+// game button's pointerdown handler tries to schedule a sound.
+function _startAudio() {
+  document.removeEventListener('touchstart', _startAudio);
+  document.removeEventListener('click',      _startAudio);
+  document.removeEventListener('keydown',    _startAudio);
+  const ac = getAc();
+  try {
+    // Silent 1-sample buffer: iOS requires an actual start() call in a trusted
+    // gesture to move the context from muted-but-running → actually audible.
+    const buf = ac.createBuffer(1, 1, 22050);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.connect(ac.destination);
+    src.start(0);
+  } catch (_) {}
+  ac.resume().catch(() => {});
+  decodePendingSfx();
+}
+document.addEventListener('touchstart', _startAudio, { passive: true });
+document.addEventListener('click',      _startAudio);
+document.addEventListener('keydown',    _startAudio);
 
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN PANEL
