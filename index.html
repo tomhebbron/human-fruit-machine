@@ -797,7 +797,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.3';
+const VERSION = '2026-06-20.4';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -926,8 +926,15 @@ function clearHistory() { localStorage.removeItem('hfm_hist'); return []; }
 let _ac = null;
 
 function getAc() {
-  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
-  if (_ac.state === 'suspended') _ac.resume();
+  if (!_ac) {
+    _ac = new (window.AudioContext || window.webkitAudioContext)();
+    // iOS moves the context to 'suspended' when an interruption ends.
+    // Auto-resume at that moment so audio comes back without user action.
+    _ac.onstatechange = () => {
+      if (_ac.state === 'suspended') _ac.resume().catch(() => {});
+    };
+  }
+  if (_ac.state === 'suspended') _ac.resume().catch(() => {});
   return _ac;
 }
 
@@ -1711,7 +1718,10 @@ document.getElementById('test-tone-btn').addEventListener('click', () => {
     osc.connect(g);
     osc.start();
     osc.stop(ac.currentTime + 1);
-    out.textContent = `State: ${ac.state} | Vol setting: ${Math.round(cfg.volume * 100)}% | Tone fired — did you hear it?`;
+    const advice = ac.state === 'interrupted'
+      ? ' ⚠️ INTERRUPTED — another app owns audio (music, AirPods, Siri). Close it and reload.'
+      : ' Did you hear it?';
+    out.textContent = `State: ${ac.state} | Vol: ${Math.round(cfg.volume * 100)}% |${advice}`;
   } catch(e) {
     out.textContent = `Error: ${e.message}`;
   }
