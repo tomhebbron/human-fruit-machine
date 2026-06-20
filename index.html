@@ -455,6 +455,21 @@
     body.touch-device #app        { padding-bottom: 215px; }
     body.no-coin #mob-coin-col, body.no-coin #coin-status { display: none; }
 
+    #vol-preview {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      background: rgba(0,0,0,0.75);
+      border-top: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    #vol-fruits { font-size: 2rem; letter-spacing: 0.25rem; }
+
     #mob-coin-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
     #mob-coin-btn {
       width: 72px; height: 72px;
@@ -609,6 +624,14 @@
       </div>
     </div>
 
+    <!-- Volunteer preview: shown early in the spin so stall helpers can grab the
+         right fruit before the reels stop. Sits at the bottom edge; players are
+         watching the spinning reels, not the bottom of the screen. -->
+    <div id="vol-preview">
+      <span id="vol-label">🤫 Volunteer</span>
+      <span id="vol-fruits"></span>
+    </div>
+
   </div><!-- /game-screen -->
 
   <!-- ═══ ADMIN SCREEN ═══ -->
@@ -710,6 +733,10 @@
           <div class="setting-row">
             <label>Win/lose fanfare plays at (s)</label>
             <input type="number" id="s-spinend" min="0.5" max="15" step="0.1" value="3.5" style="width:5rem">
+          </div>
+          <div class="setting-row">
+            <label>Volunteer preview after (s) — 0 = instantly when spin starts</label>
+            <input type="number" id="s-volrev" min="0" max="15" step="0.1" value="0" style="width:5rem">
           </div>
         </div>
         <div class="setting-group">
@@ -837,7 +864,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.16';
+const VERSION = '2026-06-20.17';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -926,12 +953,11 @@ const DEFAULTS = {
   pityCutoff:   8,
   // Spin timing is tuned so the three reels stop within the ~3.2s Jägerhaus
   // spin clip, letting that clip's own built-in stop clunks line up with the
-  // Absolute times (ms from spin-start) for each reel's visual lock and for the
-  // win/lose sound. Tune by ear to line up with the stop-clunks in the spin clip.
-  // Defaults match the Jägerhaus clip (~3.2 s): three stops spread across 1.6–2.9 s,
-  // result plays at 3.5 s (after the clip finishes naturally).
-  reelStops: [1600, 2250, 2900],
-  spinEnd:   3500,
+  // Absolute times (ms from spin-start). Tune by ear in Admin → Settings → Timing
+  // to line up the visual reel-locks with the stop-clunks in the spin clip.
+  reelStops:       [2500, 3200, 3800],
+  spinEnd:         5500,   // when win/lose fanfare plays (after clip finishes)
+  volunteerReveal: 0,      // ms after spin-start to show volunteer preview (0 = instant)
   volume:       0.6,
   prizes: {
     two:     'Sticker or lolly! 🍭',
@@ -1679,7 +1705,10 @@ function showBanner(result) {
   }
 }
 
-function hideBanner() { document.getElementById('prize-banner').className = ''; }
+function hideBanner() {
+  document.getElementById('prize-banner').className = '';
+  document.getElementById('vol-preview').style.display = 'none';
+}
 
 function updatePrizeBoard() {
   document.getElementById('prize-board').innerHTML = [
@@ -1839,14 +1868,23 @@ function startSpin() {
   stopSpin = startSpinSound(cfg.volume);
   sendToEsp32({ t: 'spin_start' });
 
-  const [t0, t1, t2] = cfg.reelStops || [1600, 2250, 2900];
-  const te = cfg.spinEnd || 3500;
+  const [t0, t1, t2] = cfg.reelStops || [2500, 3200, 3800];
+  const te = cfg.spinEnd || 5500;
+  const vr = cfg.volunteerReveal ?? 0;
+
+  // Show the volunteer preview (what the reels will land on) after vr ms.
+  // Stall helpers can glance at it and start reaching for the right fruit
+  // while the player is still watching the spinning reels.
+  const vp = document.getElementById('vol-preview');
+  document.getElementById('vol-fruits').textContent = chosenReels.map(r => r.emoji).join('  ');
+  setTimeout(() => { vp.style.display = 'flex'; }, vr);
 
   setTimeout(() => { lockReel(0, chosenReels[0]); sendToEsp32({ t: 'reel', n: 0 }); }, t0);
   setTimeout(() => { lockReel(1, chosenReels[1]); sendToEsp32({ t: 'reel', n: 1 }); }, t1);
   setTimeout(() => { lockReel(2, chosenReels[2]); sendToEsp32({ t: 'reel', n: 2 }); }, t2);
 
   setTimeout(() => {
+    vp.style.display = 'none';
     if (stopSpin) { stopSpin(); stopSpin = null; }
     const result = evaluate(chosenReels);
     history = appendPlay({
@@ -2056,7 +2094,8 @@ function syncSettingsUI() {
   document.getElementById('s-reel0').value   = (rs[0] / 1000).toFixed(2);
   document.getElementById('s-reel1').value   = (rs[1] / 1000).toFixed(2);
   document.getElementById('s-reel2').value   = (rs[2] / 1000).toFixed(2);
-  document.getElementById('s-spinend').value = ((cfg.spinEnd || 3500) / 1000).toFixed(2);
+  document.getElementById('s-spinend').value = ((cfg.spinEnd || 5500) / 1000).toFixed(2);
+  document.getElementById('s-volrev').value  = ((cfg.volunteerReveal ?? 0) / 1000).toFixed(2);
   document.getElementById('s-vol').value   = Math.round(cfg.volume * 100);
   document.getElementById('s-prize-two').value     = cfg.prizes.two;
   document.getElementById('s-prize-three').value   = cfg.prizes.three;
@@ -2191,7 +2230,8 @@ document.getElementById('save-settings').addEventListener('click', () => {
       Math.round(parseFloat(document.getElementById('s-reel1').value)   * 1000),
       Math.round(parseFloat(document.getElementById('s-reel2').value)   * 1000),
     ],
-    spinEnd: Math.round(parseFloat(document.getElementById('s-spinend').value) * 1000),
+    spinEnd:         Math.round(parseFloat(document.getElementById('s-spinend').value) * 1000),
+    volunteerReveal: Math.round(parseFloat(document.getElementById('s-volrev').value)  * 1000),
     volume:       parseInt(document.getElementById('s-vol').value) / 100,
     prizes: {
       two:     document.getElementById('s-prize-two').value,
