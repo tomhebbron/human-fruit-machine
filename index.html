@@ -561,7 +561,6 @@
 
     <header id="game-header">
       <div id="game-title">🎰 Human Fruit Machine</div>
-      <span id="go-cost">£1 a go</span>
       <button id="admin-btn" title="Admin Panel">⚙️</button>
       <div id="ws-dot" title="ESP32 WebSocket" style="display:none;font-size:0.7rem;opacity:0.4">●</div>
     </header>
@@ -1300,6 +1299,7 @@ function hideBanner() { document.getElementById('prize-banner').className = ''; 
 
 function updatePrizeBoard() {
   document.getElementById('prize-board').innerHTML = [
+    `<span id="go-cost">£1 a go</span>`,
     `<span class="pb-entry pb-jackpot">⭐×3 → ${cfg.prizes.jackpot}</span>`,
     `<span class="pb-entry pb-three">3-of-a-kind → ${cfg.prizes.three}</span>`,
     `<span class="pb-entry pb-two">Pair → ${cfg.prizes.two}</span>`,
