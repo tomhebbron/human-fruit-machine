@@ -636,14 +636,20 @@
       <div style="background:var(--surface);border-radius:0.75rem;padding:0.75rem;border:1px solid rgba(255,255,255,0.07);margin-top:1rem">
         <div class="breakdown-title">Audio Diagnostics</div>
         <p style="font-size:0.75rem;color:var(--text-dim);margin:0.3rem 0 0.6rem">
-          Tap the button below — it plays a 440 Hz tone at fixed volume, bypassing all game settings.
-          Reports AudioContext state so we can see exactly what's happening.
+          <strong>Web Audio tone</strong> = the engine the game uses. <strong>HTML5 beep</strong> = a
+          plain &lt;audio&gt; element. If you hear the HTML5 beep but NOT the Web Audio tone, it's the
+          iOS mute-switch / audio-session issue — and the silent-unmute fix is what cures it.
         </p>
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="save-btn" id="test-tone-btn">🔊 Play test tone</button>
+          <button class="save-btn" id="test-tone-btn">🔊 Web Audio tone</button>
+          <button class="save-btn" id="html5-beep-btn" style="background:var(--surface2)">🔔 HTML5 beep</button>
           <button class="save-btn" id="recover-audio-btn" style="background:var(--surface2)">↺ Recover audio</button>
         </div>
         <div id="audio-diag-out" style="font-size:0.75rem;color:var(--text-dim);margin-top:0.5rem;min-height:1.2em"></div>
+        <p style="font-size:0.7rem;color:var(--text-dim);margin:0.5rem 0 0;opacity:0.7">
+          Also check: the physical <strong>ring/silent switch</strong> on the side of the iPhone (orange = silent),
+          the volume buttons while this page is open, and that audio isn't routed to AirPods/Bluetooth.
+        </p>
       </div>
     </div>
 
@@ -800,7 +806,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.8';
+const VERSION = '2026-06-20.9';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -933,6 +939,49 @@ function _alog(...args) {
   console.log(`[FM Audio ${t}]`, ...args);
 }
 
+// Build a mono 16-bit PCM WAV as a blob URL. freq=0 → pure silence.
+// Used for (a) the silent iOS unmute element and (b) the HTML5 beep test.
+function makeWavUrl(freq, seconds, volume = 0.3, sampleRate = 44100) {
+  const n = Math.floor(seconds * sampleRate);
+  const dataSize = n * 2;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const dv = new DataView(buf);
+  const wr = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  wr(0, 'RIFF'); dv.setUint32(4, 36 + dataSize, true); wr(8, 'WAVE');
+  wr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true); dv.setUint32(24, sampleRate, true);
+  dv.setUint32(28, sampleRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  wr(36, 'data'); dv.setUint32(40, dataSize, true);
+  for (let i = 0; i < n; i++) {
+    const s = freq ? Math.sin(2 * Math.PI * freq * i / sampleRate) * volume : 0;
+    dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7FFF, true);
+  }
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
+// iOS silences pure Web Audio when the ring/silent switch is on, and can
+// strand the output route after a call. Playing a looping silent <audio>
+// element (HTMLMediaElement) on a user gesture forces the "playback" audio
+// session category, which overrides the mute switch and re-opens the route
+// so concurrently-rendered Web Audio becomes audible.
+let _unmuteEl = null;
+function unmuteIos() {
+  try {
+    if (!_unmuteEl) {
+      _unmuteEl = document.createElement('audio');
+      _unmuteEl.setAttribute('playsinline', '');
+      _unmuteEl.loop = true;
+      _unmuteEl.src = makeWavUrl(0, 0.5);
+      _alog('unmute <audio> element created');
+    }
+    const p = _unmuteEl.play();
+    if (p && p.then) {
+      p.then(() => _alog('unmute <audio> playing'))
+       .catch(e => _alog('unmute play() rejected:', e.name, e.message));
+    }
+  } catch (e) { _alog('unmute error:', e); }
+}
+
 function getAc() {
   if (!_ac) {
     _ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -958,6 +1007,7 @@ function getAc() {
 // cause iOS to silently reject resume() on the freshly-created AC.
 function recoverAudio() {
   _alog('recoverAudio() called, old state:', _ac ? _ac.state : 'none');
+  unmuteIos();   // re-establish playback category / route (call may have paused it)
   if (_ac) {
     _ac.close().catch(() => {});   // fire-and-forget; don't await
     _ac = null;
@@ -1651,6 +1701,7 @@ function _startAudio() {
   document.removeEventListener('click',      _startAudio);
   document.removeEventListener('keydown',    _startAudio);
   _alog('_startAudio(): first gesture received');
+  unmuteIos();
   const ac = getAc();
   _alog('_startAudio(): AC state after getAc():', ac.state);
   try {
@@ -1793,12 +1844,27 @@ document.getElementById('test-tone-btn').addEventListener('click', () => {
   }
 });
 
+// HTML5 <audio> beep — bypasses Web Audio entirely. Plays a real 440 Hz tone
+// through an HTMLMediaElement, which uses iOS's media path (overrides mute switch).
+let _beepUrl = null;
+document.getElementById('html5-beep-btn').addEventListener('click', () => {
+  const out = document.getElementById('audio-diag-out');
+  unmuteIos();   // a tap on this button is also a valid moment to unmute
+  if (!_beepUrl) _beepUrl = makeWavUrl(440, 1, 0.4);
+  const a = new Audio(_beepUrl);
+  a.setAttribute('playsinline', '');
+  _alog('html5-beep: attempting <audio>.play()');
+  a.play()
+    .then(() => { _alog('html5-beep: playing'); out.textContent = 'HTML5 beep playing — did you hear THIS one?'; })
+    .catch(e => { _alog('html5-beep: play() rejected:', e.name, e.message); out.textContent = `HTML5 beep blocked: ${e.name} — ${e.message}`; });
+});
+
 document.getElementById('recover-audio-btn').addEventListener('click', () => {
   const out = document.getElementById('audio-diag-out');
   recoverAudio();
   // resume() is async internally; read state after a tick
   setTimeout(() => {
-    out.textContent = `State after recovery: ${_ac ? _ac.state : 'none'} — tap test tone to confirm.`;
+    out.textContent = `State after recovery: ${_ac ? _ac.state : 'none'} — tap a test button to confirm.`;
   }, 150);
 });
 
