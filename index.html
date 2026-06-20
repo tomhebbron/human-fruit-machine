@@ -54,7 +54,19 @@
       letter-spacing: 0.04em;
     }
 
-    #game-title { cursor: default; user-select: none; -webkit-user-select: none; }
+    #admin-btn {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: rgba(255,255,255,0.25);
+      border-radius: 50%;
+      width: 2.4rem;
+      height: 2.4rem;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #admin-btn:hover { color: white; border-color: rgba(255,255,255,0.45); }
 
     /* ── Reels ── */
     #reels {
@@ -535,7 +547,8 @@
   <div id="game-screen" class="screen active">
 
     <header id="game-header">
-      <div id="game-title" title="Hold to open admin">🎰 Human Fruit Machine</div>
+      <div id="game-title">🎰 Human Fruit Machine</div>
+      <button id="admin-btn" title="Admin Panel">⚙️</button>
       <div id="ws-dot" title="ESP32 WebSocket" style="display:none;font-size:0.7rem;opacity:0.4">●</div>
     </header>
 
@@ -1541,8 +1554,12 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   else onSpace();
 });
 
-// Unlock Web Audio on first tap (important for iOS) and decode any pending SFX
+// Unlock Web Audio on first tap and decode pending SFX
 document.addEventListener('pointerdown', () => { getAc(); decodePendingSfx(); }, { once: true });
+// iOS can re-suspend the AudioContext after backgrounding — resume on every tap
+document.addEventListener('pointerdown', () => { if (_ac && _ac.state === 'suspended') _ac.resume(); });
+// Also resume when the tab/app comes back to the foreground
+document.addEventListener('visibilitychange', () => { if (_ac && document.visibilityState === 'visible') _ac.resume(); });
 
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN PANEL
@@ -1638,24 +1655,10 @@ function refreshLabels() {
 }
 
 // ── Event wiring ──
-// Long-press title (1.5 s) opens admin — hidden from players
-let _adminHoldTimer = null;
-const _adminTitle   = document.getElementById('game-title');
-
-function _adminHoldStart() {
-  _adminHoldTimer = setTimeout(() => {
-    buildStats(); buildLog(); syncSettingsUI();
-    showScreen('admin-screen');
-  }, 1500);
-}
-function _adminHoldCancel() { clearTimeout(_adminHoldTimer); }
-
-_adminTitle.addEventListener('mousedown',   _adminHoldStart);
-_adminTitle.addEventListener('touchstart',  _adminHoldStart, { passive: true });
-_adminTitle.addEventListener('mouseup',     _adminHoldCancel);
-_adminTitle.addEventListener('mouseleave',  _adminHoldCancel);
-_adminTitle.addEventListener('touchend',    _adminHoldCancel);
-_adminTitle.addEventListener('touchcancel', _adminHoldCancel);
+document.getElementById('admin-btn').addEventListener('click', () => {
+  buildStats(); buildLog(); syncSettingsUI();
+  showScreen('admin-screen');
+});
 
 document.getElementById('close-admin').addEventListener('click', () => showScreen('game-screen'));
 
