@@ -902,7 +902,7 @@ let _ac = null;
 
 function getAc() {
   if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
-  _ac.resume().catch(() => {});  // always call — no-op if running, won't throw
+  if (_ac.state === 'suspended') _ac.resume();
   return _ac;
 }
 
@@ -1554,25 +1554,8 @@ document.getElementById('spin-btn').addEventListener('click', () => {
   else onSpace();
 });
 
-// First touch: create + unlock AudioContext with a silent 1-sample buffer.
-// This is the only reliable way to start iOS audio — resume() alone is not enough.
-document.addEventListener('pointerdown', () => {
-  const ac = getAc();
-  try {
-    const buf = ac.createBuffer(1, 1, 22050);
-    const src = ac.createBufferSource();
-    src.buffer = buf;
-    src.connect(ac.destination);
-    src.start(0);
-  } catch (_) {}
-  decodePendingSfx();
-}, { once: true });
-// Re-resume on every subsequent tap (iOS re-suspends after backgrounding)
-document.addEventListener('pointerdown', () => { _ac?.resume().catch(() => {}); });
-// Re-resume when the tab comes back to the foreground
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') _ac?.resume().catch(() => {});
-});
+// Unlock Web Audio on first tap (important for iOS) and decode any pending SFX
+document.addEventListener('pointerdown', () => { getAc(); decodePendingSfx(); }, { once: true });
 
 // ═══════════════════════════════════════════════════════════════
 //  ADMIN PANEL
