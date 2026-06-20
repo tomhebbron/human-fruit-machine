@@ -808,7 +808,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.12';
+const VERSION = '2026-06-20.13';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1172,6 +1172,24 @@ function playCustom(key, vol) {
   return true;
 }
 
+// Bundled static SFX files served from sounds/ — used before falling back to synth.
+const _BUNDLED_FILES = {
+  coin:    'sounds/freesound_community-cash-register-purchase-87313.mp3',
+  ahem:    'sounds/mlg-airhorn.mp3',
+  ching:   'sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3',
+  win:     'sounds/floraphonic-you-win-sequence-1-183948.mp3',
+  jackpot: 'sounds/Jackpot-Millionaire.mp3',
+  party:   'sounds/floraphonic-you-win-sequence-2-183949.mp3',
+  crowd:   'sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3',
+  spin:    'sounds/SlotMachine%20J%C3%A4gerhuus.mp3',
+};
+function playBundled(key, vol) {
+  const f = _BUNDLED_FILES[key];
+  if (!f) return false;
+  playUrl(f, vol);
+  return true;
+}
+
 // Decode any pending raw buffers (called after first user gesture)
 async function decodePendingSfx() {
   for (const [key, ab] of Object.entries(rawSfx)) {
@@ -1184,6 +1202,7 @@ async function decodePendingSfx() {
 // 🪙 Coin drops into treasure chest
 function playCoinInserted(vol) {
   if (playCustom('coin', vol)) return;
+  if (playBundled('coin', vol)) return;
   playBaked('coin', 1.8, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.55; g.connect(dest);
     // Sharp entry clink
@@ -1212,6 +1231,7 @@ function playCoinInserted(vol) {
 // 😤 Polite ahem (no coin)
 function playAhem(vol) {
   if (playCustom('ahem', vol)) return;
+  if (playBundled('ahem', vol)) return;
   playBaked('ahem', 0.75, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.42; g.connect(dest);
     function vocalBurst(startT, freq, q, dur, amp) {
@@ -1296,6 +1316,7 @@ function playLeverClunk(vol) {
 // Bell ching for each reel stop
 function playChing(vol) {
   if (playCustom('ching', vol)) return;
+  if (playBundled('ching', vol)) return;
   playBaked('ching', 2.1, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.48; g.connect(dest);
     [[880, 1], [1320, 0.55], [1760, 0.28]].forEach(([freq, amp]) => {
@@ -1313,6 +1334,7 @@ function playChing(vol) {
 // Ascending arpeggio for pair / 3-of-a-kind
 function playWin(vol) {
   if (playCustom('win', vol)) return;
+  if (playBundled('win', vol)) return;
   playBaked('win', 1.2, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.38; g.connect(dest);
     [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
@@ -1331,6 +1353,7 @@ function playWin(vol) {
 // Jackpot fanfare
 function playJackpot(vol) {
   if (playCustom('jackpot', vol)) return;
+  if (playBundled('jackpot', vol)) return;
   playBaked('jackpot', 1.7, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.40; g.connect(dest);
     const seq = [[523,0.12],[659,0.12],[784,0.12],[1047,0.26],
@@ -1407,10 +1430,19 @@ function playNoWinSynth(vol) {
   });
 }
 
-// Spin loop (mechanical clicking) — a ~1s loopable click-bed played on a
-// dedicated looping <audio>; stop by pausing it.
+// Spin loop — played on a dedicated looping <audio>; stop by pausing it.
+// Uses bundled slot machine MP3 if present; falls back to baked synth click-bed.
 function startSpinSound(vol) {
   _spinWant = true;
+  const se = getSpinEl();
+  const spinUrl = _BUNDLED_FILES.spin;
+  if (spinUrl) {
+    if (se.src !== spinUrl) se.src = spinUrl;
+    se.volume = Math.max(0, Math.min(1, vol));
+    try { se.currentTime = 0; } catch(_){}
+    se.play().catch(e => _alog('spin play rejected', e.name));
+    return () => { _spinWant = false; if (_spinEl) { try { _spinEl.pause(); } catch(_){} } };
+  }
   bakeSound('spin', 1.0, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.22; g.connect(dest);
     let t = 0;
@@ -1426,8 +1458,7 @@ function startSpinSound(vol) {
     }
   }).then(url => {
     if (!_spinWant) return;
-    const se = getSpinEl();
-    se.src = url;
+    if (se.src !== url) se.src = url;
     se.volume = Math.max(0, Math.min(1, vol));
     try { se.currentTime = 0; } catch(_){}
     se.play().catch(e => _alog('spin play rejected', e.name));
@@ -1437,6 +1468,7 @@ function startSpinSound(vol) {
 
 // 🎉 Party ascending arpeggio
 function playParty(vol) {
+  if (playBundled('party', vol)) return;
   playBaked('party', 0.85, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.38; g.connect(dest);
     [523, 659, 784, 1047, 1319].forEach((freq, i) => {
@@ -1454,6 +1486,7 @@ function playParty(vol) {
 
 // 👥 Crowd "ooooh" noise burst
 function playCrowdOoh(vol) {
+  if (playBundled('crowd', vol)) return;
   playBaked('crowd', 1.0, vol, (ac, dest) => {
     const g = ac.createGain(); g.gain.value = 0.32; g.connect(dest);
     [260, 330, 420].forEach((freq, i) => {
@@ -1856,7 +1889,7 @@ function _startAudio() {
   // so later timer-driven plays are allowed by iOS.
   const la = getLoseAudio();
   const se = getSpinEl();
-  if (!se.src) se.src = makeWavUrl(0, 0.05);
+  if (!se.src) se.src = _BUNDLED_FILES.spin || makeWavUrl(0, 0.05);
   [la, se].forEach(el => {
     try {
       el.muted = true;
