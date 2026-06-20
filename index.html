@@ -800,7 +800,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.5';
+const VERSION = '2026-06-20.6';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -942,6 +942,12 @@ function getAc() {
 // Close and recreate the AudioContext — the only reliable fix after a
 // FaceTime/Siri interruption that doesn't auto-release the session.
 async function recoverAudio() {
+  // Create and immediately close a throwaway AC synchronously here (still inside
+  // the gesture callback) to prime iOS's user-gesture flag. Without this, the
+  // await below yields back to the browser, the gesture context expires, and the
+  // new real AC's resume() is silently ignored by iOS.
+  const _AC = window.AudioContext || window.webkitAudioContext;
+  if (_AC) { const d = new _AC(); d.resume().catch(()=>{}).finally(()=>d.close().catch(()=>{})); }
   if (_ac) {
     try { await _ac.close(); } catch(_) {}
     _ac = null;
@@ -962,6 +968,14 @@ function _autoRecover() {
 }
 document.addEventListener('touchstart', _autoRecover, { passive: true });
 document.addEventListener('click',      _autoRecover);
+
+// Resume a suspended (not interrupted) context when the user returns to the tab.
+// Interrupted needs a user tap to recreate the context; suspended just needs resume().
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _ac && _ac.state === 'suspended') {
+    _ac.resume().catch(() => {});
+  }
+});
 
 function mg(vol) {                      // master gain node helper
   const ac = getAc();
