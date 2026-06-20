@@ -16,7 +16,7 @@ Priority order for every sound: **operator's custom upload** (admin → SFX tab)
 |------|-------|----------|
 | `lose.mp3` | Loser spin (sad trombone) | `nowin` |
 | `freesound_community-cash-register-purchase-87313.mp3` | Coin inserted | `coin` |
-| `SlotMachine Jägerhuus.mp3` | Spinning reels (plays once — has built-in reel-stop sounds) | `spin` |
+| `slot-machine-spin.mp3` | Spinning reels (plays once — has built-in reel-stop sounds) | `spin` |
 | `floraphonic-you-win-sequence-1-183948.mp3` | Pair win fanfare | `pairWin` |
 | `floraphonic-you-win-sequence-2-183949.mp3` | Three-of-a-kind fanfare | `tripleWin` |
 | `Jackpot-Millionaire.mp3` | Star-jackpot fanfare | `jackpot` |

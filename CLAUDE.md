@@ -165,7 +165,7 @@ See `sounds/README.md` for the file-by-file mapping. Summary:
 |------------|----------------|-----------------|
 | Coin insert | `freesound_community-cash-register-purchase-87313.mp3` | yes |
 | Ahem (no coin) | synth only (no bundled file) | yes |
-| Reel spin | `SlotMachine Jägerhuus.mp3` (plays once — has stop sounds) | yes (looping click-bed) |
+| Reel spin | `slot-machine-spin.mp3` (plays once — has stop sounds) | yes (looping click-bed) |
 | Lever clunk | **none** — included in spin clip | — |
 | Per-reel ching | **none** — included in spin clip | — |
 | Pair win | `floraphonic-you-win-sequence-1-…mp3` | yes |
