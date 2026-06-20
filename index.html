@@ -426,6 +426,73 @@
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.4; }
     }
+
+    /* ── Mobile touch controls ── */
+    #mobile-bar {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: linear-gradient(to top, var(--surface) 55%, rgba(28,13,54,0.9));
+      border-top: 2px solid rgba(255,215,0,0.18);
+      padding: 0.75rem 1.5rem max(1rem, env(safe-area-inset-bottom));
+      z-index: 200;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 2.5rem;
+    }
+    body.touch-device #mobile-bar { display: flex; }
+    body.touch-device #app        { padding-bottom: 215px; }
+
+    #mob-coin-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+    #mob-coin-btn {
+      width: 72px; height: 72px;
+      border-radius: 50%; border: none;
+      background: radial-gradient(circle at 35% 30%, #ffe44d, #c8a000);
+      box-shadow: 0 5px 0 #7a5f00, 0 0 22px rgba(255,215,0,0.35);
+      font-size: 2.1rem;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s;
+      touch-action: manipulation;
+    }
+    #mob-coin-btn:active {
+      transform: translateY(4px);
+      box-shadow: 0 1px 0 #7a5f00, 0 0 10px rgba(255,215,0,0.2);
+    }
+    .mob-label { font-size: 0.62rem; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; text-align: center; }
+
+    #mob-lever-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+    #mob-lever-track {
+      width: 70px; height: 150px;
+      background: rgba(255,255,255,0.04);
+      border: 2px solid rgba(255,255,255,0.12);
+      border-radius: 2rem;
+      position: relative;
+      touch-action: none;
+    }
+    #mob-lever-knob {
+      position: absolute;
+      top: 8px; left: 50%; transform: translateX(-50%);
+      width: 56px; height: 56px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #ff8888, #cc2222);
+      box-shadow: 0 4px 0 #7a0000, 0 0 18px rgba(255,60,60,0.4);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; gap: 1px;
+      user-select: none; -webkit-user-select: none;
+      touch-action: none;
+    }
+    #mob-lever-knob .knob-icon { font-size: 1.15rem; line-height: 1; }
+    #mob-lever-knob .knob-text { font-size: 0.56rem; font-weight: 900; letter-spacing: 0.06em; }
+    #mob-lever-knob.pulling {
+      background: radial-gradient(circle at 35% 30%, #ffd97a, #c8a000);
+      box-shadow: 0 4px 0 #7a5f00, 0 0 22px rgba(255,215,0,0.55);
+      color: #2a1a00;
+    }
+    #mob-lever-knob.maxed {
+      background: radial-gradient(circle at 35% 30%, #66ffaa, #00bb55);
+      box-shadow: 0 4px 0 #005522, 0 0 28px rgba(0,230,118,0.65);
+      color: #002210;
+    }
   </style>
 </head>
 <body>
@@ -591,6 +658,23 @@
     </div>
 
   </div><!-- /admin-screen -->
+
+  <!-- ═══ MOBILE TOUCH CONTROLS ═══ -->
+  <div id="mobile-bar">
+    <div id="mob-coin-col">
+      <button id="mob-coin-btn">🪙</button>
+      <div class="mob-label">Coin</div>
+    </div>
+    <div id="mob-lever-wrap">
+      <div class="mob-label">Pull Lever</div>
+      <div id="mob-lever-track">
+        <div id="mob-lever-knob">
+          <span class="knob-icon">↕</span>
+          <span class="knob-text">PULL</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div><!-- /app -->
 
@@ -947,6 +1031,7 @@ function startSpinSound(vol) {
 // ═══════════════════════════════════════════════════════════════
 //  STATE  nocoin → ready → pulling → spinning → result
 // ═══════════════════════════════════════════════════════════════
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 let state      = 'nocoin';
 let leverLevel = 0;
 let cfg        = loadCfg();
@@ -1029,7 +1114,7 @@ function updateUI() {
     case 'ready':
       btn.disabled      = false;
       label.textContent = 'SPIN!';
-      hint.textContent  = 'Pull the lever!';
+      hint.textContent  = isTouchDevice ? 'Drag the lever below!' : 'Pull the lever!';
       cs.className      = 'ready';
       cs.innerHTML      = '✅ Ready!';
       break;
@@ -1339,6 +1424,74 @@ document.getElementById('clear-history').addEventListener('click', () => {
 
 // Initial UI render
 updateUI();
+
+// ═══════════════════════════════════════════════════════════════
+//  MOBILE TOUCH CONTROLS
+// ═══════════════════════════════════════════════════════════════
+if (isTouchDevice) {
+  document.body.classList.add('touch-device');
+
+  // Coin button
+  document.getElementById('mob-coin-btn').addEventListener('pointerdown', () => {
+    getAc();
+    onCoin();
+  });
+
+  // Lever drag — knob starts at top:8px, max drag 86px (bottom of knob = bottom of track)
+  const knob       = document.getElementById('mob-lever-knob');
+  const TRACK_DRAG = 86;
+  let dragging  = false;
+  let startY    = 0;
+  let lastLevel = 0;
+
+  function applyDrag(clientY) {
+    const raw     = clientY - startY;
+    const clamped = Math.max(0, Math.min(TRACK_DRAG, raw));
+    knob.style.top = (8 + clamped) + 'px';
+
+    const level = clamped < 4 ? 0 : Math.ceil((clamped / TRACK_DRAG) * 5);
+    knob.classList.toggle('pulling', level > 0 && level < 5);
+    knob.classList.toggle('maxed',   level === 5);
+    knob.querySelector('.knob-icon').textContent = level > 0 ? level + '/5' : '↕';
+    knob.querySelector('.knob-text').textContent = level === 5 ? 'RELEASE!' : level > 0 ? 'PULL' : 'PULL';
+
+    if (level !== lastLevel) { lastLevel = level; onLeverLevel(level); }
+  }
+
+  function snapBack() {
+    if (!dragging) return;
+    dragging = false;
+    knob.style.transition = 'top 0.32s cubic-bezier(0.17, 0.89, 0.32, 1.3)';
+    knob.style.top        = '8px';
+    knob.classList.remove('pulling', 'maxed');
+    knob.querySelector('.knob-icon').textContent = '↕';
+    knob.querySelector('.knob-text').textContent = 'PULL';
+    onLeverLevel(0);
+    lastLevel = 0;
+    // Slight delay so snap animation starts before spin kicks off
+    setTimeout(() => {
+      if (state === 'ready' || state === 'pulling') onSpace();
+      else if (state === 'nocoin' || state === 'result') onAhem();
+    }, 80);
+  }
+
+  knob.addEventListener('touchstart', e => {
+    e.preventDefault();
+    dragging = true;
+    startY   = e.touches[0].clientY;
+    knob.style.transition = 'none';
+    getAc();
+  }, { passive: false });
+
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    e.preventDefault();
+    applyDrag(e.touches[0].clientY);
+  }, { passive: false });
+
+  document.addEventListener('touchend',    snapBack);
+  document.addEventListener('touchcancel', snapBack);
+}
 </script>
 </body>
 </html>
