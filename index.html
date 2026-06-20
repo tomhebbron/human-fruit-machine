@@ -690,13 +690,26 @@
         </div>
         <div class="setting-group">
           <h4>Timing</h4>
+          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.5rem">
+            Seconds from the start of the spin sound when each reel visually locks and
+            when the win/lose fanfare plays. Tune by ear to line up the reel-locks with
+            the stop-clunks in your spin clip.
+          </p>
           <div class="setting-row">
-            <label>Spin duration <span id="lbl-spin">3.0s</span></label>
-            <input type="range" id="s-spin" min="1000" max="8000" step="500" value="3000">
+            <label>Reel 1 locks at (s)</label>
+            <input type="number" id="s-reel0" min="0.1" max="10" step="0.1" value="1.6" style="width:5rem">
           </div>
           <div class="setting-row">
-            <label>Gap between reels stopping <span id="lbl-delay">0.9s</span></label>
-            <input type="range" id="s-delay" min="300" max="2500" step="100" value="900">
+            <label>Reel 2 locks at (s)</label>
+            <input type="number" id="s-reel1" min="0.1" max="10" step="0.1" value="2.25" style="width:5rem">
+          </div>
+          <div class="setting-row">
+            <label>Reel 3 locks at (s)</label>
+            <input type="number" id="s-reel2" min="0.1" max="10" step="0.1" value="2.9" style="width:5rem">
+          </div>
+          <div class="setting-row">
+            <label>Win/lose fanfare plays at (s)</label>
+            <input type="number" id="s-spinend" min="0.5" max="15" step="0.1" value="3.5" style="width:5rem">
           </div>
         </div>
         <div class="setting-group">
@@ -824,7 +837,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.15';
+const VERSION = '2026-06-20.16';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -913,9 +926,12 @@ const DEFAULTS = {
   pityCutoff:   8,
   // Spin timing is tuned so the three reels stop within the ~3.2s Jägerhaus
   // spin clip, letting that clip's own built-in stop clunks line up with the
-  // reels. Operators can fine-tune by ear in Settings → Timing.
-  spinDuration: 1600,
-  reelDelay:    650,
+  // Absolute times (ms from spin-start) for each reel's visual lock and for the
+  // win/lose sound. Tune by ear to line up with the stop-clunks in the spin clip.
+  // Defaults match the Jägerhaus clip (~3.2 s): three stops spread across 1.6–2.9 s,
+  // result plays at 3.5 s (after the clip finishes naturally).
+  reelStops: [1600, 2250, 2900],
+  spinEnd:   3500,
   volume:       0.6,
   prizes: {
     two:     'Sticker or lolly! 🍭',
@@ -1817,46 +1833,36 @@ function startSpin() {
   });
 
   [0,1,2].forEach(startReelAnim);
-  // The Jägerhaus spin clip plays right through and supplies its own reel-stop
-  // clunks, so we do NOT stop it or play a per-reel ching as each reel locks.
+  // All times are absolute ms from spin-start, set in Admin → Settings → Timing.
+  // The spin clip plays through; reel-stops are visual-only (the clip supplies the
+  // audible stop-clunks). Win/lose fanfare fires at spinEnd, after the clip ends.
   stopSpin = startSpinSound(cfg.volume);
   sendToEsp32({ t: 'spin_start' });
 
-  const sd = cfg.spinDuration;
-  const rd = cfg.reelDelay;
+  const [t0, t1, t2] = cfg.reelStops || [1600, 2250, 2900];
+  const te = cfg.spinEnd || 3500;
+
+  setTimeout(() => { lockReel(0, chosenReels[0]); sendToEsp32({ t: 'reel', n: 0 }); }, t0);
+  setTimeout(() => { lockReel(1, chosenReels[1]); sendToEsp32({ t: 'reel', n: 1 }); }, t1);
+  setTimeout(() => { lockReel(2, chosenReels[2]); sendToEsp32({ t: 'reel', n: 2 }); }, t2);
 
   setTimeout(() => {
-    lockReel(0, chosenReels[0]);
-    sendToEsp32({ t: 'reel', n: 0 });
-  }, sd);
-
-  setTimeout(() => {
-    lockReel(1, chosenReels[1]);
-    sendToEsp32({ t: 'reel', n: 1 });
-  }, sd + rd);
-
-  setTimeout(() => {
-    lockReel(2, chosenReels[2]);
-    sendToEsp32({ t: 'reel', n: 2 });
-
-    setTimeout(() => {
-      if (stopSpin) { stopSpin(); stopSpin = null; }   // end the spin clip at the result
-      const result = evaluate(chosenReels);
-      history = appendPlay({
-        reels: chosenReels.map(f => f.emoji + ' ' + f.name),
-        type: result.type,
-        won:  result.type !== 'none',
-      });
-      showBanner(result);
-      sendToEsp32({ t: 'result', type: result.type });
-      if      (result.type === 'jackpot') playJackpot(cfg.volume);
-      else if (result.type === 'three')   playTripleWin(cfg.volume);
-      else if (result.type === 'two')     playPairWin(cfg.volume);
-      else                                playNoWin(cfg.volume);
-      state = 'result';
-      updateUI();
-    }, 600);
-  }, sd + rd * 2);
+    if (stopSpin) { stopSpin(); stopSpin = null; }
+    const result = evaluate(chosenReels);
+    history = appendPlay({
+      reels: chosenReels.map(f => f.emoji + ' ' + f.name),
+      type: result.type,
+      won:  result.type !== 'none',
+    });
+    showBanner(result);
+    sendToEsp32({ t: 'result', type: result.type });
+    if      (result.type === 'jackpot') playJackpot(cfg.volume);
+    else if (result.type === 'three')   playTripleWin(cfg.volume);
+    else if (result.type === 'two')     playPairWin(cfg.volume);
+    else                                playNoWin(cfg.volume);
+    state = 'result';
+    updateUI();
+  }, te);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2046,8 +2052,11 @@ function syncSettingsUI() {
   document.getElementById('s-three').value = Math.round(cfg.threeChance * 100);
   document.getElementById('s-two').value   = Math.round(cfg.twoChance   * 100);
   document.getElementById('s-pity').value  = cfg.pityCutoff;
-  document.getElementById('s-spin').value  = cfg.spinDuration;
-  document.getElementById('s-delay').value = cfg.reelDelay;
+  const rs = cfg.reelStops || [1600, 2250, 2900];
+  document.getElementById('s-reel0').value   = (rs[0] / 1000).toFixed(2);
+  document.getElementById('s-reel1').value   = (rs[1] / 1000).toFixed(2);
+  document.getElementById('s-reel2').value   = (rs[2] / 1000).toFixed(2);
+  document.getElementById('s-spinend').value = ((cfg.spinEnd || 3500) / 1000).toFixed(2);
   document.getElementById('s-vol').value   = Math.round(cfg.volume * 100);
   document.getElementById('s-prize-two').value     = cfg.prizes.two;
   document.getElementById('s-prize-three').value   = cfg.prizes.three;
@@ -2062,8 +2071,7 @@ function refreshLabels() {
   document.getElementById('lbl-three').textContent = document.getElementById('s-three').value + '%';
   document.getElementById('lbl-two').textContent   = document.getElementById('s-two').value   + '%';
   document.getElementById('lbl-pity').textContent  = document.getElementById('s-pity').value;
-  document.getElementById('lbl-spin').textContent  = (document.getElementById('s-spin').value  / 1000).toFixed(1) + 's';
-  document.getElementById('lbl-delay').textContent = (document.getElementById('s-delay').value / 1000).toFixed(1) + 's';
+  // Timing fields are number inputs; no live label needed.
   document.getElementById('lbl-vol').textContent   = document.getElementById('s-vol').value + '%';
 }
 
@@ -2168,7 +2176,7 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-['s-three','s-two','s-pity','s-spin','s-delay','s-vol'].forEach(id => {
+['s-three','s-two','s-pity','s-vol'].forEach(id => {
   document.getElementById(id).addEventListener('input', refreshLabels);
 });
 
@@ -2178,8 +2186,12 @@ document.getElementById('save-settings').addEventListener('click', () => {
     threeChance:  parseInt(document.getElementById('s-three').value) / 100,
     twoChance:    parseInt(document.getElementById('s-two').value)   / 100,
     pityCutoff:   parseInt(document.getElementById('s-pity').value),
-    spinDuration: parseInt(document.getElementById('s-spin').value),
-    reelDelay:    parseInt(document.getElementById('s-delay').value),
+    reelStops: [
+      Math.round(parseFloat(document.getElementById('s-reel0').value)   * 1000),
+      Math.round(parseFloat(document.getElementById('s-reel1').value)   * 1000),
+      Math.round(parseFloat(document.getElementById('s-reel2').value)   * 1000),
+    ],
+    spinEnd: Math.round(parseFloat(document.getElementById('s-spinend').value) * 1000),
     volume:       parseInt(document.getElementById('s-vol').value) / 100,
     prizes: {
       two:     document.getElementById('s-prize-two').value,
