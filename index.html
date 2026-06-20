@@ -69,11 +69,16 @@
     #admin-btn:hover { color: white; border-color: rgba(255,255,255,0.45); }
 
     /* ── Reels ── */
+    #reels-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
     #reels {
       display: flex;
       gap: clamp(0.5rem, 2vw, 1rem);
-      flex: 1;
-      min-height: 0;
+      width: 100%;
+      height: 100%;
     }
 
     .reel {
@@ -264,39 +269,43 @@
       min-height: 1.1em;
     }
 
-    /* ── Prize banner ── */
+    /* ── Prize banner — overlays the reels, no layout shift ── */
     #prize-banner {
       display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 10;
       flex-direction: column;
       align-items: center;
-      gap: 0.3rem;
-      background: var(--surface);
-      border: 2px solid rgba(255,255,255,0.1);
+      justify-content: center;
+      gap: 0.5rem;
+      background: rgba(10, 0, 22, 0.82);
       border-radius: var(--radius);
-      padding: 0.7rem 1.4rem;
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
       text-align: center;
-      width: 100%;
-      max-width: 480px;
+      padding: 1rem;
     }
 
     #prize-banner.show    { display: flex; }
 
     #prize-banner.win {
-      background: var(--green-dim);
-      border-color: var(--green);
-      box-shadow: 0 0 30px rgba(0, 230, 118, 0.2);
+      background: rgba(0, 28, 14, 0.88);
+      box-shadow: inset 0 0 0 2px var(--green), 0 0 40px rgba(0,230,118,0.25);
       animation: banner-pop 0.4s cubic-bezier(0.17, 0.89, 0.32, 1.28);
     }
 
     #prize-banner.jackpot {
-      background: rgba(255, 215, 0, 0.07);
-      border-color: var(--gold);
-      box-shadow: 0 0 60px var(--gold-glow);
+      background: rgba(36, 26, 0, 0.88);
+      box-shadow: inset 0 0 0 2px var(--gold), 0 0 60px var(--gold-glow);
       animation: jackpot-glow 0.45s ease-in-out 5 alternate,
                  banner-pop 0.4s cubic-bezier(0.17, 0.89, 0.32, 1.28);
     }
 
-    #prize-banner.lose { animation: banner-pop 0.3s ease-out; }
+    #prize-banner.lose {
+      background: rgba(28, 0, 8, 0.85);
+      animation: banner-pop 0.3s ease-out;
+    }
 
     @keyframes banner-pop {
       0%   { transform: scale(0.55); opacity: 0; }
@@ -581,21 +590,31 @@
 
     <div id="prize-board"></div>
 
-    <div id="reels">
-      <div class="reel" id="reel-0">
-        <div class="reel-label">Volunteer 1</div>
-        <span class="reel-emoji" id="emoji-0">🍒</span>
-        <div class="reel-name"  id="name-0"></div>
+    <div id="reels-wrap">
+      <div id="reels">
+        <div class="reel" id="reel-0">
+          <div class="reel-label">Volunteer 1</div>
+          <span class="reel-emoji" id="emoji-0">🍒</span>
+          <div class="reel-name"  id="name-0"></div>
+        </div>
+        <div class="reel" id="reel-1">
+          <div class="reel-label">Volunteer 2</div>
+          <span class="reel-emoji" id="emoji-1">🍋</span>
+          <div class="reel-name"  id="name-1"></div>
+        </div>
+        <div class="reel" id="reel-2">
+          <div class="reel-label">Volunteer 3</div>
+          <span class="reel-emoji" id="emoji-2">🍊</span>
+          <div class="reel-name"  id="name-2"></div>
+        </div>
       </div>
-      <div class="reel" id="reel-1">
-        <div class="reel-label">Volunteer 2</div>
-        <span class="reel-emoji" id="emoji-1">🍋</span>
-        <div class="reel-name"  id="name-1"></div>
-      </div>
-      <div class="reel" id="reel-2">
-        <div class="reel-label">Volunteer 3</div>
-        <span class="reel-emoji" id="emoji-2">🍊</span>
-        <div class="reel-name"  id="name-2"></div>
+
+      <!-- Prize banner sits inside the reels wrapper so it overlays the reels
+           at position:absolute without displacing anything below it. -->
+      <div id="prize-banner">
+        <div id="prize-headline"></div>
+        <div id="prize-detail"></div>
+        <div id="prize-award"></div>
       </div>
     </div>
 
@@ -616,12 +635,6 @@
       </div>
 
       <div id="spin-hint"></div>
-
-      <div id="prize-banner">
-        <div id="prize-headline"></div>
-        <div id="prize-detail"></div>
-        <div id="prize-award"></div>
-      </div>
     </div>
 
     <!-- Volunteer preview: shown early in the spin so stall helpers can grab the
@@ -864,7 +877,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.17';
+const VERSION = '2026-06-20.18';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
