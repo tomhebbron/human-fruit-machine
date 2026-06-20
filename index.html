@@ -468,16 +468,17 @@
       display: none;
       align-items: center;
       justify-content: center;
-      gap: 0.75rem;
-      padding: 0.5rem 1rem;
-      background: rgba(0,0,0,0.75);
-      border-top: 1px solid rgba(255,255,255,0.12);
-      font-size: 0.72rem;
-      color: rgba(255,255,255,0.55);
-      letter-spacing: 0.06em;
+      gap: 1rem;
+      padding: 0.9rem 1.5rem;
+      background: rgba(0,0,0,0.88);
+      border-top: 2px solid rgba(255,255,255,0.2);
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.75);
+      letter-spacing: 0.08em;
       text-transform: uppercase;
+      font-weight: 600;
     }
-    #vol-fruits { font-size: 2rem; letter-spacing: 0.25rem; }
+    #vol-fruits { font-size: 3rem; letter-spacing: 0.4rem; }
 
     #mob-coin-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
     #mob-coin-btn {
@@ -702,10 +703,9 @@
               <span>Require coin to play</span>
             </label>
             <p style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem">
-              <strong>On</strong> (default): players insert a £1 coin before each spin — the classic flow.<br>
-              <strong>Off</strong> (credit / wristband mode): no coin step. Players just pull the lever for
-              every go. Use this when a games-master is stamping wristbands for X-spin credits, like at the
-              school fete.
+              <strong>Off</strong> (default — booth/wristband mode): no coin step. Players just pull the
+              lever for every go. A games-master stamps/removes wristband credits.<br>
+              <strong>On</strong> (coin mode): players insert a £1 coin before each spin — the classic flow.
             </p>
           </div>
         </div>
@@ -733,19 +733,19 @@
           </p>
           <div class="setting-row">
             <label>Reel 1 locks at (s)</label>
-            <input type="number" id="s-reel0" min="0.1" max="10" step="0.1" value="1.6" style="width:5rem">
+            <input type="number" id="s-reel0" min="0.1" max="10" step="0.01" value="1.89" style="width:5rem">
           </div>
           <div class="setting-row">
             <label>Reel 2 locks at (s)</label>
-            <input type="number" id="s-reel1" min="0.1" max="10" step="0.1" value="2.25" style="width:5rem">
+            <input type="number" id="s-reel1" min="0.1" max="10" step="0.01" value="2.89" style="width:5rem">
           </div>
           <div class="setting-row">
             <label>Reel 3 locks at (s)</label>
-            <input type="number" id="s-reel2" min="0.1" max="10" step="0.1" value="2.9" style="width:5rem">
+            <input type="number" id="s-reel2" min="0.1" max="10" step="0.01" value="3.89" style="width:5rem">
           </div>
           <div class="setting-row">
             <label>Win/lose fanfare plays at (s)</label>
-            <input type="number" id="s-spinend" min="0.5" max="15" step="0.1" value="3.5" style="width:5rem">
+            <input type="number" id="s-spinend" min="0.5" max="15" step="0.1" value="5.5" style="width:5rem">
           </div>
           <div class="setting-row">
             <label>Volunteer preview after (s) — 0 = instantly when spin starts</label>
@@ -877,7 +877,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.18';
+const VERSION = '2026-06-20.19';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -960,15 +960,13 @@ function evaluate(reels) {
 //  STORAGE
 // ═══════════════════════════════════════════════════════════════
 const DEFAULTS = {
-  requireCoin:  true,   // false = "credit mode": no coin step, just pull the lever
+  requireCoin:  false,  // false = booth/wristband mode: no coin step, just pull the lever
   threeChance:  0.05,
   twoChance:    0.20,
   pityCutoff:   8,
-  // Spin timing is tuned so the three reels stop within the ~3.2s Jägerhaus
-  // spin clip, letting that clip's own built-in stop clunks line up with the
-  // Absolute times (ms from spin-start). Tune by ear in Admin → Settings → Timing
-  // to line up the visual reel-locks with the stop-clunks in the spin clip.
-  reelStops:       [2500, 3200, 3800],
+  // Tuned for slot-machine-spin.mp3 (Jägerhaus): stop clunks at 1.89/2.89/3.89s, clip ends ~5s.
+  // Absolute times (ms from spin-start). Tune by ear in Admin → Settings → Timing.
+  reelStops:       [1890, 2890, 3890],
   spinEnd:         5500,   // when win/lose fanfare plays (after clip finishes)
   volunteerReveal: 0,      // ms after spin-start to show volunteer preview (0 = instant)
   volume:       0.6,
@@ -1897,7 +1895,6 @@ function startSpin() {
   setTimeout(() => { lockReel(2, chosenReels[2]); sendToEsp32({ t: 'reel', n: 2 }); }, t2);
 
   setTimeout(() => {
-    vp.style.display = 'none';
     if (stopSpin) { stopSpin(); stopSpin = null; }
     const result = evaluate(chosenReels);
     history = appendPlay({
