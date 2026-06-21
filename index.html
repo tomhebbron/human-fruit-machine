@@ -738,15 +738,15 @@
           <h4>Prizes</h4>
           <div class="setting-row">
             <label>Pair prize</label>
-            <input type="text" id="s-prize-two" value="Sticker or lolly! 🍭">
+            <input type="text" id="s-prize-two" value="A sticker! 🌟">
           </div>
           <div class="setting-row">
             <label>3-of-a-kind prize</label>
-            <input type="text" id="s-prize-three" value="Bag of sweets! 🍬">
+            <input type="text" id="s-prize-three" value="A lollipop! 🍭">
           </div>
           <div class="setting-row">
             <label>Jackpot (⭐ Lucky Star × 3)</label>
-            <input type="text" id="s-prize-jackpot" value="TOP PRIZE — see the stall holder! 🏆">
+            <input type="text" id="s-prize-jackpot" value="JACKPOT — see the organ grinder! 🏆">
           </div>
         </div>
         <div class="setting-group">
@@ -839,7 +839,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.22';
+const VERSION = '2026-06-20.23';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -934,11 +934,11 @@ const DEFAULTS = {
   autoReset:    8,         // seconds after result banner before auto-resetting (0 = manual only)
   volume:       0.6,
   prizes: {
-    two:     'Sticker or lolly! 🍭',
-    three:   'Bag of sweets! 🍬',
-    jackpot: 'TOP PRIZE — see the stall holder! 🏆',
+    two:     'A sticker! 🌟',
+    three:   'A lollipop! 🍭',
+    jackpot: 'JACKPOT — see the organ grinder! 🏆',
   },
-  prizePence: { two: 20, three: 50, jackpot: 200 },
+  prizePence: { two: 1, three: 11, jackpot: 400 },
 };
 
 function loadCfg() {
