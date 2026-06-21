@@ -839,7 +839,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.21';
+const VERSION = '2026-06-20.22';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -2339,7 +2339,7 @@ function buildCalibrateTab() {
 
 function doSim(n) {
   const runBtn = document.getElementById('sim-run');
-  runBtn.textContent = `Running…`;
+  runBtn.textContent = 'Running…';
   runBtn.disabled    = true;
   setTimeout(() => {
     const types    = runSimulation(n);
@@ -2354,6 +2354,61 @@ function doSim(n) {
     const expTwo   = (cfg.twoChance   * 100).toFixed(1);
     const expWin   = ((cfg.threeChance + cfg.twoChance) * 100).toFixed(1);
     const expNone  = (100 - parseFloat(expWin)).toFixed(1);
+
+    // Financial
+    const pp = cfg.prizePence ?? {};
+    const pairCost    = twos   * (pp.two     ?? 20);
+    const threeCost   = threes * (pp.three   ?? 50);
+    const jackpotCost = jacks  * (pp.jackpot ?? 200);
+    const totalPrize  = pairCost + threeCost + jackpotCost;
+    const gbp = p => '£' + (Math.abs(p) / 100).toFixed(2);
+
+    let financeRows;
+    if (cfg.requireCoin) {
+      const rev   = n * 100;
+      const profit = rev - totalPrize;
+      const rtp   = (totalPrize / rev * 100).toFixed(1);
+      const pc    = profit >= 0 ? 'var(--green)' : 'orange';
+      financeRows = `
+        <tr><td>💰 Revenue (${n} × £1)</td>
+            <td></td><td></td>
+            <td style="text-align:right;color:var(--green)">${gbp(rev)}</td></tr>
+        <tr><td>🎉 Pair prizes</td>
+            <td style="text-align:right">${twos}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.two ?? 20)}</td>
+            <td style="text-align:right;color:orange">−${gbp(pairCost)}</td></tr>
+        <tr><td>🎰 Three-of-a-kind prizes</td>
+            <td style="text-align:right">${threes}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.three ?? 50)}</td>
+            <td style="text-align:right;color:orange">−${gbp(threeCost)}</td></tr>
+        <tr><td>⭐ Jackpot prizes</td>
+            <td style="text-align:right">${jacks}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
+            <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
+        <tr style="border-top:1px solid rgba(255,255,255,0.15)">
+            <td><strong>Net profit</strong></td>
+            <td colspan="2" style="text-align:right;color:var(--text-dim)">RTP ${rtp}%</td>
+            <td style="text-align:right;font-weight:700;color:${pc}">${profit<0?'−':''}${gbp(profit)}</td></tr>`;
+    } else {
+      const avg = (totalPrize / n).toFixed(1);
+      financeRows = `
+        <tr><td>🎉 Pair prizes</td>
+            <td style="text-align:right">${twos}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.two ?? 20)}</td>
+            <td style="text-align:right;color:orange">−${gbp(pairCost)}</td></tr>
+        <tr><td>🎰 Three-of-a-kind prizes</td>
+            <td style="text-align:right">${threes}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.three ?? 50)}</td>
+            <td style="text-align:right;color:orange">−${gbp(threeCost)}</td></tr>
+        <tr><td>⭐ Jackpot prizes</td>
+            <td style="text-align:right">${jacks}</td>
+            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
+            <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
+        <tr style="border-top:1px solid rgba(255,255,255,0.15)">
+            <td><strong>Total prize cost</strong></td>
+            <td colspan="2" style="text-align:right;color:var(--text-dim)">${avg}p/game avg</td>
+            <td style="text-align:right;font-weight:700;color:orange">−${gbp(totalPrize)}</td></tr>`;
+    }
 
     function simRow(label, actual, expected) {
       const diff = (parseFloat(actual) - parseFloat(expected)).toFixed(1);
@@ -2380,6 +2435,15 @@ function doSim(n) {
           ${simRow('✅ Any win', pct(wins), expWin + '%')}
           ${simRow('❌ No win', pct(nones), expNone + '%')}
         </tbody>
+      </table>
+
+      <div class="breakdown-title" style="margin-top:1rem">Prize payouts</div>
+      <table class="log-table" style="margin-top:0.5rem">
+        <thead><tr>
+          <th>Item</th><th style="text-align:right">Count</th>
+          <th style="text-align:right">Each</th><th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>${financeRows}</tbody>
       </table>
       <p style="font-size:0.74rem;color:var(--text-dim);margin-top:0.6rem">
         Pity mechanic (force win after ${cfg.pityCutoff} consecutive losses) is included.
