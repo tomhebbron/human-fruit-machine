@@ -3,9 +3,10 @@
  * ==================================================================
  * Replaces lever_wifi (lever hardware retired). The ESP32:
  *   - hosts the web app: WiFi AP + LittleFS web server + WebSocket
- *   - reads the big spin button, coin sensor, and 3 easter-egg buttons
- *   - drives WS2812B cabinet strips + egg-button LEDs from real game
- *     events sent back by the page (per-reel locks, win/lose/jackpot)
+ *   - reads the big spin button, coin sensor, and 3 light-up buttons
+ *   - drives six WS2812B zones + button lamps from real game events,
+ *     designed so the LIGHTS ALONE communicate the outcome (win /
+ *     pair / jackpot / lose) if the iPad display or sound ever fails
  *   - SELF-SYNCS the web app from GitHub Pages: at boot it tries to
  *     join your home WiFi; if it succeeds it downloads index.html and
  *     the sound files listed in sync-manifest.txt into LittleFS, then
@@ -16,18 +17,42 @@
  *   (password "fruitfair") → iPad joins → Safari http://192.168.4.1
  *   → tap the on-screen TAP TO START overlay once (unlocks audio).
  *
- * ── Wiring ───────────────────────────────────────────────────────
- *   Spin button        → GPIO 19 to GND   (INPUT_PULLUP, debounced)
- *   KY-010 coin OUT    → GPIO 32          (LOW = coin)
- *   Egg switches       → GPIO 33 / 21 / 22 to GND (INPUT_PULLUP)
- *       NOTE: moved off GPIO 35/36 — those pins are input-only with
- *       NO internal pull-ups; they float and fire at random.
- *   Egg LED anodes     → GPIO 25 / 26 / 27 via 330 Ω (LEDC PWM)
- *   Strip 1 data       → GPIO 13   Strip 2 → GPIO 4   Strip 3 → GPIO 16
- *       300-500 Ω in series on each data line; strips on their own
- *       5 V supply (50 LEDs full white ≈ 3 A), common GND with ESP32.
- *       GPIO 16 is unavailable on WROVER boards (PSRAM) — WROOM only.
- *   Onboard LED        → GPIO 2 (AP up / sync activity)
+ * ── LED zones (segments cut from one WS2812B reel) ──────────────
+ *   Zone            Data pin   Count define    Effect role
+ *   Top cabinet sq.  GPIO 13   NUM_TOP         ambient / celebration
+ *   Main panel sq.   GPIO  4   NUM_MAIN        ambient / celebration
+ *   Buttons panel    GPIO 16   NUM_BTNPANEL    ambient / celebration
+ *   Reel borders ×3  GPIO 18   NUM_REEL each   per-window state: chase
+ *                                              while spinning, gold on
+ *                                              lock, green on match,
+ *                                              red on lose, gold strobe
+ *                                              on jackpot
+ *   The three reel-window borders are ONE chain on GPIO 18: exit of
+ *   window 1 feeds DIN of window 2, then window 3 — left to right.
+ *   Every segment joint: 3 wires (5V, GND, DATA), DOUT→DIN direction.
+ *   Set the NUM_ defines below to your real segment counts.
+ *
+ *   Power: data daisy-chains, power must NOT — run 5V/GND from the
+ *   buck converter to each zone in parallel (default 126 LEDs ≈ 7.5 A
+ *   theoretical full-white; real usage far less, but budget ≥4 A and
+ *   keep LED_BRIGHT ≤ 160). 300-500 Ω series resistor on each of the
+ *   4 data lines, 1000 µF cap across 5V/GND at the supply, common GND
+ *   with the ESP32. GPIO 16 is unavailable on WROVER — WROOM only.
+ *
+ * ── Buttons ──────────────────────────────────────────────────────
+ *   Big red spin button (right):  switch → GPIO 19 to GND (INPUT_PULLUP)
+ *                                 lamp   → GPIO 23 (PWM). Drive a plain
+ *       LED + resistor directly; if the button has a 5-12 V lamp, switch
+ *       it through a logic-level MOSFET instead. Lamp shows game state:
+ *       breathing = ready, off = spinning, blinking = press to reset.
+ *   Light-up buttons, one under each reel window (the easter eggs):
+ *       switches → GPIO 33 / 21 / 22 to GND (INPUT_PULLUP)
+ *       LEDs     → GPIO 25 / 26 / 27 via 330 Ω (PWM)
+ *       Their LEDs mirror their reel: lit when that reel locks/wins.
+ *       NOTE: moved off GPIO 35/36 — input-only pins with NO internal
+ *       pull-ups; they float and fire at random.
+ *   KY-010 coin OUT → GPIO 32 (LOW = coin)
+ *   Onboard LED     → GPIO 2 (AP up / sync activity)
  *
  * ── Build (tested targets — pin these) ──────────────────────────
  *   Board: ESP32 Dev Module (classic WROOM), ESP32 Arduino core 3.x
@@ -42,15 +67,14 @@
  *   the synced payload (index.html + 8 wired MP3s) is ~0.9 MB.
  *   No filesystem-upload plugin needed: the sketch downloads its own
  *   files. First flash on a blank board: flash, power it near your
- *   home WiFi once, watch Serial for "sync ok".
+ *   home WiFi once, watch Serial for "Sync ok".
  *
  * ── WebSocket protocol ───────────────────────────────────────────
  *   ESP32 → page:  {"t":"coin"}  {"t":"button"}  {"t":"egg","n":0-2}
  *   page → ESP32:  {"t":"spin_start"}  {"t":"reel","n":0-2}
- *                  {"t":"result","type":"jackpot"|"three"|"two"|"none"}
- *                  {"t":"state","s":"..."} (informational; parsed, unused)
- *   (Legacy lever/release messages are gone — the page still accepts
- *   them for the old BLE firmware, but this sketch never sends them.)
+ *                  {"t":"result","type":"jackpot"|"three"|"two"|"none",
+ *                   "m":[matched reel indices]}
+ *                  {"t":"state","s":"..."} (drives the spin-button lamp)
  */
 
 #include <WiFi.h>
@@ -73,26 +97,37 @@ const unsigned long HOME_JOIN_TIMEOUT_MS = 10000;
 const char* AP_SSID = "FruitMachine";
 const char* AP_PASS = "fruitfair";
 
-// ── NeoPixel strips ──────────────────────────────────────────────
-#define PIN_STRIP1   13
-#define PIN_STRIP2    4
-#define PIN_STRIP3   16
-#define NUM_STRIP1   20
-#define NUM_STRIP2   20
-#define NUM_STRIP3   10
-#define TOTAL_LEDS   (NUM_STRIP1 + NUM_STRIP2 + NUM_STRIP3)
-#define LED_BRIGHT   180
+// ── LED zone config — EDIT COUNTS to your real segments ─────────
+#define PIN_TOP       13
+#define PIN_MAIN       4
+#define PIN_BTNPANEL  16
+#define PIN_REELS     18
+#define NUM_TOP       40   // square around top cabinet area
+#define NUM_MAIN      30   // around the main panel
+#define NUM_BTNPANEL  20   // around the buttons panel
+#define NUM_REEL      12   // PER reel-window border (3 windows, one chain)
+#define NUM_REELS_ALL (NUM_REEL * 3)
+#define TOTAL_LEDS    (NUM_TOP + NUM_MAIN + NUM_BTNPANEL + NUM_REELS_ALL)
+#define LED_BRIGHT    160
+
+// Zone offsets inside the one leds[] array.
+const int Z_TOP   = 0;
+const int Z_MAIN  = NUM_TOP;
+const int Z_BTNP  = NUM_TOP + NUM_MAIN;
+const int Z_REELS = NUM_TOP + NUM_MAIN + NUM_BTNPANEL;
+const int CABINET_LEDS = Z_REELS;   // the three ambient zones are contiguous
 
 CRGB    leds[TOTAL_LEDS];
 uint8_t gHue = 0;
 
-// ── Inputs / outputs ─────────────────────────────────────────────
-const int BUTTON_PIN = 19;
-const int COIN_PIN   = 32;
-const int LED_PIN    = 2;
-const int EGG_COUNT  = 3;
-const int EGG_SW[]   = {33, 21, 22};
-const int EGG_LED[]  = {25, 26, 27};
+// ── Buttons / sensors ────────────────────────────────────────────
+const int BUTTON_PIN   = 19;
+const int SPIN_LED_PIN = 23;
+const int COIN_PIN     = 32;
+const int LED_PIN      = 2;
+const int EGG_COUNT    = 3;
+const int EGG_SW[]     = {33, 21, 22};   // under reel windows 0 / 1 / 2
+const int EGG_LED[]    = {25, 26, 27};
 
 const unsigned long BTN_DEBOUNCE_MS  = 40;
 const unsigned long COIN_DEBOUNCE_MS = 500;
@@ -105,20 +140,23 @@ AsyncWebSocket ws("/ws");
 // ── Light engine ─────────────────────────────────────────────────
 enum LightMode {
   LM_IDLE,
-  LM_COIN,       // orange flash on coin insert
+  LM_COIN,       // gold flash on coin insert
   LM_PRESS,      // white pulse on button press (tactile ack)
   LM_NOCLIENT,   // red blips: button pressed but no page connected
-  LM_SPINNING,   // chase + per-reel gold lock overlay
-  LM_WIN,        // rainbow — pair or three-of-a-kind
-  LM_JACKPOT,    // gold/white strobe
-  LM_LOSE,       // red fade
+  LM_SPINNING,   // per-window chase; gold on each lock
+  LM_WIN,        // pair (matched windows green) or triple (all green)
+  LM_JACKPOT,    // gold/white strobe everywhere
+  LM_LOSE,       // red fade everywhere
   LM_EGG,
 };
 
 LightMode     lightMode  = LM_IDLE;
 unsigned long lightTs    = 0;
 int           eggFlash   = 0;
-uint8_t       lockedMask = 0;
+uint8_t       lockedMask = 0;        // reels locked during spin
+uint8_t       winMask    = 0;        // matched reels for LM_WIN
+bool          winTriple  = false;
+char          pageState[12] = "ready";   // drives the spin-button lamp
 
 void setLight(LightMode m) { lightMode = m; lightTs = millis(); }
 
@@ -131,6 +169,20 @@ int breathe(unsigned long off, unsigned long period, int maxB = 90) {
   return (int)(v * v * maxB);
 }
 
+void fillCabinet(CRGB c)        { fill_solid(leds, CABINET_LEDS, c); }
+void reelBorder(int r, CRGB c)  { fill_solid(leds + Z_REELS + r * NUM_REEL, NUM_REEL, c); }
+void reelScale(int r, uint8_t s){ nscale8(leds + Z_REELS + r * NUM_REEL, NUM_REEL, s); }
+
+// Rotating comet inside one reel-window border (offset per window so the
+// three don't move in lockstep).
+void reelChase(int r) {
+  int start = Z_REELS + r * NUM_REEL;
+  fadeToBlackBy(leds + start, NUM_REEL, 60);
+  int pos = ((int)(millis() / 28) + r * (NUM_REEL / 3)) % NUM_REEL;
+  leds[start + pos] = CRGB::White;
+  leds[start + (pos + NUM_REEL - 1) % NUM_REEL] = CRGB(80, 120, 255);
+}
+
 void updateLights() {
   gHue++;
   unsigned long el = millis() - lightTs;
@@ -138,10 +190,14 @@ void updateLights() {
   switch (lightMode) {
 
     case LM_IDLE:
-      fill_rainbow(leds, TOTAL_LEDS, gHue / 3, 256 / max(1, TOTAL_LEDS));
-      nscale8(leds, TOTAL_LEDS, 100);
-      for (int i = 0; i < EGG_COUNT; i++)
-        btnBright(i, breathe(i * 700UL, 2400));
+      // Cabinet zones: slow rainbow. Reel borders: staggered gold breathing.
+      fill_rainbow(leds, CABINET_LEDS, gHue / 3, max(1, 256 / CABINET_LEDS));
+      nscale8(leds, CABINET_LEDS, 90);
+      for (int r = 0; r < 3; r++) {
+        reelBorder(r, CRGB(255, 150, 0));
+        reelScale(r, 30 + breathe(r * 500UL, 3000, 90));
+        btnBright(r, breathe(r * 700UL, 2400));
+      }
       break;
 
     case LM_COIN: {
@@ -171,32 +227,55 @@ void updateLights() {
     case LM_SPINNING: {
       if (el > 15000) { setLight(LM_IDLE); break; }   // safety timeout
 
-      fadeToBlackBy(leds, TOTAL_LEDS, 55);
-      int pos = (millis() / 18) % TOTAL_LEDS;
-      leds[pos] = CRGB::White;
-      leds[(pos + TOTAL_LEDS - 1) % TOTAL_LEDS] = CRGB(80, 120, 255);
+      // Cabinet: dim blue pulse so the reel windows carry the drama.
+      fillCabinet(CRGB(10, 25, 70));
+      nscale8(leds, CABINET_LEDS, 90 + breathe(0, 800, 100));
 
-      int sec = TOTAL_LEDS / 3;
-      for (int r = 0; r < 3; r++)
-        if (lockedMask & (1 << r))
-          fill_solid(leds + r * sec, sec, CRGB(255, 150, 0));
-
-      for (int i = 0; i < EGG_COUNT; i++)
-        btnBright(i, (lockedMask & (1 << i)) ? 255 : ((millis() / 60) % 2 ? 160 : 10));
+      for (int r = 0; r < 3; r++) {
+        if (lockedMask & (1 << r)) {
+          reelBorder(r, CRGB(255, 150, 0));           // locked: solid gold
+          btnBright(r, 255);                          // its button lights too
+        } else {
+          reelChase(r);
+          btnBright(r, (millis() / 60) % 2 ? 160 : 10);
+        }
+      }
       break;
     }
 
-    case LM_WIN:
-      fill_rainbow(leds, TOTAL_LEDS, gHue * 2, 7);
-      allBtns((millis() / 65) % 2 ? 255 : 0);
-      if (el > 2500) setLight(LM_IDLE);
+    case LM_WIN: {
+      bool on = (millis() / 130) % 2;
+      if (winTriple) {
+        // Three of a kind: all windows green, cabinet party rainbow.
+        fill_rainbow(leds, CABINET_LEDS, gHue * 2, 7);
+        for (int r = 0; r < 3; r++) {
+          reelBorder(r, on ? CRGB(0, 230, 90) : CRGB(0, 90, 30));
+          btnBright(r, on ? 255 : 40);
+        }
+      } else {
+        // Pair: ONLY the matched windows flash green — readable outcome
+        // even with no screen and no sound. Odd one out stays dim.
+        fillCabinet(CRGB(0, 60, 25));
+        for (int r = 0; r < 3; r++) {
+          if (winMask & (1 << r)) {
+            reelBorder(r, on ? CRGB(0, 230, 90) : CRGB(0, 110, 40));
+            btnBright(r, on ? 255 : 60);
+          } else {
+            reelBorder(r, CRGB(20, 20, 20));
+            btnBright(r, 0);
+          }
+        }
+      }
+      if (el > 3000) setLight(LM_IDLE);
       break;
+    }
 
     case LM_JACKPOT: {
+      // Unmissable: whole cabinet + all windows strobing gold/white.
       bool on = (millis() / 50) % 2;
       fill_solid(leds, TOTAL_LEDS, on ? CRGB(255, 215, 0) : CRGB::White);
       allBtns(on ? 255 : 80);
-      if (el > 3000) setLight(LM_IDLE);
+      if (el > 4000) setLight(LM_IDLE);
       break;
     }
 
@@ -218,6 +297,15 @@ void updateLights() {
       break;
     }
   }
+
+  // Big red button lamp — driven by the page's reported state, independent
+  // of the zone animation: breathe = press me, off = spinning, blink = reset.
+  int sb;
+  if      (lightMode == LM_SPINNING)         sb = 0;
+  else if (!strcmp(pageState, "result"))     sb = ((millis() / 300) % 2) ? 220 : 25;
+  else if (!strcmp(pageState, "nocoin"))     sb = breathe(0, 2600, 50);
+  else                                       sb = breathe(0, 1100, 255);  // ready
+  ledcWrite(SPIN_LED_PIN, sb);
 
   FastLED.show();
 }
@@ -241,13 +329,19 @@ void handlePageMessage(const uint8_t* data, size_t len) {
 
   } else if (!strcmp(t, "result")) {
     lockedMask = 0;
+    winMask    = 0;
+    JsonArray m = doc["m"];
+    if (!m.isNull())
+      for (JsonVariant v : m) { int i = v | -1; if (i >= 0 && i < 3) winMask |= (1 << i); }
     const char* type = doc["type"] | "";
     if      (!strcmp(type, "jackpot")) setLight(LM_JACKPOT);
     else if (!strcmp(type, "none"))    setLight(LM_LOSE);
-    else                               setLight(LM_WIN);
+    else { winTriple = !strcmp(type, "three"); setLight(LM_WIN); }
+
+  } else if (!strcmp(t, "state")) {
+    const char* s = doc["s"] | "";
+    strlcpy(pageState, s, sizeof(pageState));
   }
-  // "state" messages are valid JSON we simply ignore — do NOT let them
-  // alias other message types (the old substring parser bug).
 }
 
 void onWsEvent(AsyncWebSocket* srv, AsyncWebSocketClient* client,
@@ -342,14 +436,16 @@ void setup() {
   pinMode(LED_PIN,    OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(COIN_PIN,   INPUT_PULLUP);
+  ledcAttach(SPIN_LED_PIN, 1000, 8);
   for (int i = 0; i < EGG_COUNT; i++) {
     pinMode(EGG_SW[i], INPUT_PULLUP);
     ledcAttach(EGG_LED[i], 1000, 8);
   }
 
-  FastLED.addLeds<WS2812B, PIN_STRIP1, GRB>(leds, 0,                       NUM_STRIP1);
-  FastLED.addLeds<WS2812B, PIN_STRIP2, GRB>(leds, NUM_STRIP1,              NUM_STRIP2);
-  FastLED.addLeds<WS2812B, PIN_STRIP3, GRB>(leds, NUM_STRIP1 + NUM_STRIP2, NUM_STRIP3);
+  FastLED.addLeds<WS2812B, PIN_TOP,      GRB>(leds, Z_TOP,   NUM_TOP);
+  FastLED.addLeds<WS2812B, PIN_MAIN,     GRB>(leds, Z_MAIN,  NUM_MAIN);
+  FastLED.addLeds<WS2812B, PIN_BTNPANEL, GRB>(leds, Z_BTNP,  NUM_BTNPANEL);
+  FastLED.addLeds<WS2812B, PIN_REELS,    GRB>(leds, Z_REELS, NUM_REELS_ALL);
   FastLED.setBrightness(LED_BRIGHT);
   FastLED.clear(true);
 
@@ -414,7 +510,7 @@ void loop() {
     Serial.println("COIN -> {\"t\":\"coin\"}");
   }
 
-  // Easter-egg buttons
+  // Light-up buttons under the reel windows (easter eggs)
   static bool          eggHeld[EGG_COUNT]   = {};
   static unsigned long eggLastMs[EGG_COUNT] = {};
   for (int i = 0; i < EGG_COUNT; i++) {

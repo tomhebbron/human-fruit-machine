@@ -899,7 +899,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-03.1';
+const VERSION = '2026-07-03.2';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1892,7 +1892,12 @@ function startSpin() {
       won:  result.type !== 'none',
     });
     showBanner(result);
-    sendToEsp32({ t: 'result', type: result.type });
+    // m = indices of the matching reels so the firmware can light exactly
+    // those reel-window borders (lights double as the fallback display).
+    const m = result.match
+      ? chosenReels.map((f, i) => f.id === result.match.id ? i : -1).filter(i => i >= 0)
+      : [];
+    sendToEsp32({ t: 'result', type: result.type, m });
     if      (result.type === 'jackpot') playJackpot(cfg.volume);
     else if (result.type === 'three')   playTripleWin(cfg.volume);
     else if (result.type === 'two')     playPairWin(cfg.volume);

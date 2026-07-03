@@ -236,8 +236,9 @@ The web page can be driven by:
   applies the coin gate: `nocoin` state → ahem, otherwise spin/reset),
   `{"t":"coin"}`, `{"t":"egg","n":0-2}`. Auto-enabled only when the page
   is loaded over `http:` (served from the ESP32). On GitHub Pages this
-  is a no-op. The page sends back `spin_start` / `reel` / `result` /
-  `state` for the LED show.
+  is a no-op. The page sends back `spin_start` / `reel` / `result`
+  (with `m` = matched reel indices, so a pair lights exactly those two
+  reel-window borders) / `state` (drives the big red button's lamp).
 * **Mobile touch UI**: on-screen spin button (single `click` handler —
   do NOT add a `pointerdown` handler, one tap would fire both) and the
   three secret buttons in the bottom bar.
