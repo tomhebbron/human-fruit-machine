@@ -578,6 +578,69 @@
       width: 100%;
       resize: vertical;
     }
+
+    /* ── Volunteer display mode — booth iPad, daylight-readable ──
+       Black background + huge white/gold type: the dark purple game theme
+       was designed for a dim cabinet and washes out in an outdoor booth. */
+    #vol-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 150;
+      display: none;
+      flex-direction: column;
+      background: #000;
+      padding: 1.5vh 2vw;
+    }
+    #vol-topbar { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    #vol-state-line {
+      font-size: clamp(1rem, 2.6vw, 1.8rem);
+      font-weight: 800;
+      color: #777;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    #vol-admin-btn {
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      color: #555;
+      border-radius: 50%;
+      width: 2.8rem;
+      height: 2.8rem;
+      font-size: 1.1rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #vol-main { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+    .vol-idle { text-align: center; }
+    .vol-idle .vi-big { font-size: clamp(3rem, 13vw, 11rem); font-weight: 900; color: #fff; }
+    .vol-idle .vi-sub { font-size: clamp(1.3rem, 4.5vw, 3.2rem); color: var(--gold); margin-top: 2vh; font-weight: 700; }
+    .vol-cols { display: flex; gap: 2vw; width: 100%; height: 100%; }
+    .vol-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1vh;
+      border: 0.6vh solid #222;
+      border-radius: 2vh;
+      background: #0a0a0a;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .vol-col.now { border-color: #00e676; background: #03170c; }
+    .vc-who   { font-size: clamp(0.9rem, 2.2vw, 1.6rem); color: #777; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; }
+    .vc-fruit { font-size: clamp(4rem, 17vw, 15rem); line-height: 1.1; }
+    .vc-name  { font-size: clamp(1.2rem, 3.5vw, 2.6rem); font-weight: 900; color: #fff; text-transform: uppercase; min-height: 1.2em; }
+    .vc-count { font-size: clamp(2rem, 7vw, 5rem); font-weight: 900; color: var(--gold); min-height: 1.2em; }
+    .vol-col.now .vc-count { color: #00e676; }
+    .vol-result { text-align: center; width: 100%; }
+    .vol-result .vr-head { font-size: clamp(2.6rem, 11vw, 9rem); font-weight: 900; color: #fff; }
+    .vol-result.win     .vr-head { color: #00e676; }
+    .vol-result.jackpot .vr-head { color: var(--gold); text-shadow: 0 0 40px rgba(255,215,0,0.5); animation: coin-pulse 0.5s ease-in-out infinite; }
+    .vol-result.lose    .vr-head { color: #ff5252; }
+    .vol-result .vr-prize  { font-size: clamp(1.4rem, 5vw, 4rem); color: #fff; font-weight: 700; margin-top: 2vh; }
+    .vol-result .vr-fruits { font-size: clamp(2.5rem, 9vw, 7rem); margin-top: 3vh; letter-spacing: 1vw; }
+    .vol-result .vr-fruits .dim { opacity: 0.22; }
   </style>
 </head>
 <body>
@@ -713,6 +776,17 @@
               <strong>Off</strong> (default — booth/wristband mode): no coin step. Players just pull the
               lever for every go. A games-master stamps/removes wristband credits.<br>
               <strong>On</strong> (coin mode): players insert a £1 coin before each spin — the classic flow.
+            </p>
+          </div>
+          <div class="setting-row">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+              <input type="checkbox" id="s-volmode" style="width:1.2rem;height:1.2rem">
+              <span>Volunteer display mode (booth iPad)</span>
+            </label>
+            <p style="font-size:0.78rem;color:var(--text-dim);margin-top:0.3rem">
+              Full-screen fruits and per-reel countdowns for the helpers in the booth,
+              then the result in huge type. Override per-load with <code>?volunteer=1</code>
+              or <code>?volunteer=0</code> in the URL.
             </p>
           </div>
         </div>
@@ -896,10 +970,20 @@
   <div class="so-sub">one tap turns the sound on</div>
 </div>
 
+<!-- Volunteer display: full-screen fruits + per-reel countdowns for the
+     helpers in the booth. Shown when cfg.volunteerMode (or ?volunteer=1). -->
+<div id="vol-screen">
+  <div id="vol-topbar">
+    <div id="vol-state-line"></div>
+    <button id="vol-admin-btn" title="Admin">⚙️</button>
+  </div>
+  <div id="vol-main"></div>
+</div>
+
 <script>
 'use strict';
 
-const VERSION = '2026-07-03.2';
+const VERSION = '2026-07-03.3';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -982,7 +1066,8 @@ function evaluate(reels) {
 //  STORAGE
 // ═══════════════════════════════════════════════════════════════
 const DEFAULTS = {
-  requireCoin:  false,  // false = booth/wristband mode: no coin step, just pull the lever
+  requireCoin:   false,  // false = booth/wristband mode: no coin step, just press the button
+  volunteerMode: false,  // true = booth iPad: full-screen fruits + countdowns for helpers
   threeChance:  0.05,
   twoChance:    0.20,
   pityCutoff:   8,
@@ -1783,6 +1868,88 @@ function updateUI() {
       cs.innerHTML      = '';
       break;
   }
+  volRender();
+}
+
+// ── Volunteer display mode ──
+// The booth iPad faces the three helpers, not the player: show each helper
+// THEIR fruit as big as possible plus a countdown to their reel's lock time,
+// then the outcome in huge type. ?volunteer=1 / ?volunteer=0 in the URL
+// overrides the saved setting for that load (handy for testing).
+const _volQ     = new URLSearchParams(location.search);
+const _volForce = _volQ.has('volunteer') ? _volQ.get('volunteer') !== '0' : null;
+function isVolMode() { return _volForce !== null ? _volForce : !!cfg.volunteerMode; }
+
+let _volReels = null, _volT0 = 0, _volTick = null, _lastResult = null;
+
+function volRender() {
+  const scr = document.getElementById('vol-screen');
+  const adminOpen = document.getElementById('admin-screen').classList.contains('active');
+  if (!isVolMode() || adminOpen) {
+    scr.style.display = 'none';
+    if (_volTick) { clearInterval(_volTick); _volTick = null; }
+    return;
+  }
+  scr.style.display = 'flex';
+  const line = document.getElementById('vol-state-line');
+  const main = document.getElementById('vol-main');
+
+  if (state === 'spinning' && _volReels) {
+    line.textContent = 'Get ready…';
+    if (!main.querySelector('.vol-cols')) {
+      main.innerHTML = '<div class="vol-cols">' + [0, 1, 2].map(i => `
+        <div class="vol-col" id="vc-${i}">
+          <div class="vc-who">Volunteer ${i + 1}</div>
+          <div class="vc-fruit" id="vc-fruit-${i}">❓</div>
+          <div class="vc-name" id="vc-name-${i}"></div>
+          <div class="vc-count" id="vc-count-${i}"></div>
+        </div>`).join('') + '</div>';
+    }
+    if (!_volTick) _volTick = setInterval(volTickSpin, 100);
+    volTickSpin();
+    return;
+  }
+
+  if (_volTick) { clearInterval(_volTick); _volTick = null; }
+
+  if (state === 'result' && _lastResult) {
+    const r     = _lastResult;
+    const cls   = r.type === 'jackpot' ? 'jackpot' : r.type === 'none' ? 'lose' : 'win';
+    const head  = { jackpot: '⭐ JACKPOT! ⭐', three: 'THREE OF A KIND!', two: 'PAIR!', none: 'NO WIN' }[r.type];
+    const prize = r.type === 'none' ? 'Better luck next time! 🤞' : '🎁 ' + cfg.prizes[r.type];
+    const fruits = (_volReels || []).map(f =>
+      `<span class="${r.match && f.id === r.match.id ? '' : 'dim'}">${f.emoji}</span>`).join(' ');
+    line.textContent = 'Result';
+    main.innerHTML = `<div class="vol-result ${cls}">
+      <div class="vr-head">${head}</div>
+      <div class="vr-prize">${prize}</div>
+      <div class="vr-fruits">${fruits}</div>
+    </div>`;
+  } else if (state === 'nocoin') {
+    line.textContent = 'Waiting';
+    main.innerHTML = '<div class="vol-idle"><div class="vi-big">🪙</div><div class="vi-sub">Insert £1 to play</div></div>';
+  } else {
+    line.textContent = 'Waiting for player';
+    main.innerHTML = '<div class="vol-idle"><div class="vi-big">🎰 READY</div><div class="vi-sub">Press the big red button!</div></div>';
+  }
+}
+
+function volTickSpin() {
+  if (!_volReels) return;
+  const el     = Date.now() - _volT0;
+  const stops  = cfg.reelStops || [1890, 2890, 3890];
+  const reveal = cfg.volunteerReveal ?? 0;
+  for (let i = 0; i < 3; i++) {
+    const col = document.getElementById('vc-' + i);
+    if (!col) return;
+    const revealed = el >= reveal;
+    document.getElementById('vc-fruit-' + i).textContent = revealed ? _volReels[i].emoji : '❓';
+    document.getElementById('vc-name-'  + i).textContent = revealed ? _volReels[i].name  : '';
+    const left = stops[i] - el;
+    const cnt  = document.getElementById('vc-count-' + i);
+    if (left <= 0) { cnt.textContent = 'NOW!'; col.classList.add('now'); }
+    else { cnt.textContent = revealed ? Math.ceil(left / 1000) : '…'; col.classList.remove('now'); }
+  }
 }
 
 // ── Pity check ──
@@ -1846,6 +2013,8 @@ function onSpace() {
 // ═══════════════════════════════════════════════════════════════
 function startSpin() {
   setLeverLevel(0);
+  _volReels = null;          // don't let volRender show last game's fruits
+  _lastResult = null;
   state = 'spinning';
   updateUI();
   hideBanner();
@@ -1860,6 +2029,10 @@ function startSpin() {
     pitying:     isPitying(),
     forcing,
   });
+
+  _volReels = chosenReels;
+  _volT0    = Date.now();
+  volRender();
 
   [0,1,2].forEach(startReelAnim);
   // All times are absolute ms from spin-start, set in Admin → Settings → Timing.
@@ -1886,6 +2059,7 @@ function startSpin() {
   setTimeout(() => {
     if (stopSpin) { stopSpin(); stopSpin = null; }
     const result = evaluate(chosenReels);
+    _lastResult = result;
     history = appendPlay({
       reels: chosenReels.map(f => f.emoji + ' ' + f.name),
       type: result.type,
@@ -2048,6 +2222,7 @@ document.addEventListener('keydown',    _startAudio);
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  volRender();   // volunteer overlay hides while admin is open
 }
 
 function buildStats() {
@@ -2112,6 +2287,7 @@ function buildLog() {
 
 function syncSettingsUI() {
   document.getElementById('s-coin').checked = !!cfg.requireCoin;
+  document.getElementById('s-volmode').checked = !!cfg.volunteerMode;
   document.getElementById('s-three').value = Math.round(cfg.threeChance * 100);
   document.getElementById('s-two').value   = Math.round(cfg.twoChance   * 100);
   document.getElementById('s-pity').value  = cfg.pityCutoff;
@@ -2226,6 +2402,11 @@ document.getElementById('admin-btn').addEventListener('click', () => {
   showScreen('admin-screen');
 });
 
+document.getElementById('vol-admin-btn').addEventListener('click', () => {
+  buildStats(); buildLog(); syncSettingsUI();
+  showScreen('admin-screen');
+});
+
 document.getElementById('close-admin').addEventListener('click', () => showScreen('game-screen'));
 
 document.querySelectorAll('.tab').forEach(btn => {
@@ -2248,7 +2429,8 @@ document.querySelectorAll('.tab').forEach(btn => {
 
 document.getElementById('save-settings').addEventListener('click', () => {
   cfg = {
-    requireCoin:  document.getElementById('s-coin').checked,
+    requireCoin:   document.getElementById('s-coin').checked,
+    volunteerMode: document.getElementById('s-volmode').checked,
     threeChance:  parseInt(document.getElementById('s-three').value) / 100,
     twoChance:    parseInt(document.getElementById('s-two').value)   / 100,
     pityCutoff:   parseInt(document.getElementById('s-pity').value),
@@ -2275,6 +2457,7 @@ document.getElementById('save-settings').addEventListener('click', () => {
   saveCfg(cfg);
   updatePrizeBoard();
   applyCoinMode();
+  volRender();
   // If we're between games when the mode flips, drop into the right idle state
   // (otherwise the player can be stuck on 'nocoin' with no coin slot showing).
   if (state === 'nocoin' || state === 'ready' || state === 'result') {
@@ -2309,6 +2492,7 @@ document.getElementById('cfg-apply').addEventListener('click', () => {
     syncSettingsUI();
     updatePrizeBoard();
     applyCoinMode();
+    volRender();
     if (state === 'nocoin' || state === 'ready' || state === 'result') {
       state = idleState();
       updateUI();

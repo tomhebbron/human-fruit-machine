@@ -274,6 +274,14 @@ bar):
 
 ## History of major changes (most recent first)
 
+* `v2026-07-03.3` — Volunteer display mode (`cfg.volunteerMode`, or
+  `?volunteer=1` URL override): full-screen black overlay with each
+  helper's fruit huge + countdown to their reel's lock time, then the
+  result in huge type. Small ⚙ button top-right opens the same admin.
+* `v2026-07-03.2` — Six-zone cabinet lighting in `button_wifi/`
+  (top/main/buttons-panel surrounds + 3 reel-window borders on GPIO 18
+  as one chain); page sends matched reel indices (`m`) in `result`;
+  spin-button lamp on GPIO 23 driven by page state.
 * `v2026-07-03.1` — **Booth architecture**: new `button_wifi/` firmware
   (button input on GPIO 19, egg switches moved off floating GPIO 35/36,
   ArduinoJson message parsing, serves `sounds/` from LittleFS, self-sync
