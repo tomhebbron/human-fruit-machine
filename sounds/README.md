@@ -12,46 +12,44 @@ Priority order for every sound: **operator's custom upload** (admin → SFX tab)
 
 ## Bundled files and their game events
 
+This table matches `_BUNDLED_FILES` in `index.html` — if you change one,
+change the other.
+
 | File | Event | Game key |
 |------|-------|----------|
 | `lose.mp3` | Loser spin (sad trombone) | `nowin` |
 | `freesound_community-cash-register-purchase-87313.mp3` | Coin inserted | `coin` |
 | `slot-machine-spin.mp3` | Spinning reels (plays once — has built-in reel-stop sounds) | `spin` |
-| `floraphonic-you-win-sequence-1-183948.mp3` | Pair win fanfare | `pairWin` |
-| `floraphonic-you-win-sequence-2-183949.mp3` | Three-of-a-kind fanfare | `tripleWin` |
-| `Jackpot-Millionaire.mp3` | Star-jackpot fanfare | `jackpot` |
+| `floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3` | Pair win fanfare | `pairWin` |
+| `floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3` | Three-of-a-kind fanfare | `tripleWin` |
+| `floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3` | Star-jackpot fanfare | `jackpot` |
 | `mlg-airhorn.mp3` | Secret button 1 (⭐ / Q) | `egg1` |
+| `muttley-wheeze-or-laugh.mp3` | Secret button 2 (👥 / E) | `egg2` |
 
-## Files referenced but not yet uploaded
-
-The game will look for these; if missing it falls back to a synth sound. Drop
-the file in this directory with the exact filename to enable.
-
-| File | Event | Falls back to |
-|------|-------|----------------|
-| `muttley-wheeze-or-laugh.mp3` | Secret button 2 (👥 / E) | crowd "ooooh" synth |
+Every wired file must also be listed in `sync-manifest.txt` (repo root) so the
+button_wifi firmware downloads it onto the ESP32.
 
 ## Reel-stop timing
 
 The Jägerhaus clip is **played once** (not looped) because it contains its own
-mechanical lever-pull and three reel-stop clunks. `cfg.spinDuration` (1600ms)
-and `cfg.reelDelay` (650ms) are tuned so the three reels lock during the clip's
-~3.2s runtime, lining up the visible reel-stops with the clip's audible
+mechanical lever-pull and three reel-stop clunks. The absolute lock times
+`cfg.reelStops` (defaults 1.89 / 2.89 / 3.89 s) and the fanfare time
+`cfg.spinEnd` (5.5 s) line the visible reel-stops up with the clip's audible
 stop-clunks. The per-reel "ching" bell and the lever-bottom "clunk" are
 intentionally silent — they'd duplicate the sounds already in the clip.
 
-If you swap in a different spin clip, retune those two settings in
+If you swap in a different spin clip, retune those settings in
 **Admin → Settings → Timing** by ear.
 
 ## Unused / spare files
 
-Currently in this directory but not wired to any event. They can be assigned
-via the admin SFX upload panel as overrides.
+Currently in this directory but not wired to any event (and not synced to the
+ESP32). They can be assigned via the admin SFX upload panel as overrides.
 
-- `floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3`
-- `floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3`
 - `floraphonic-playful-casino-slot-machine-bonus-3-183920.mp3`
-- `floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3`
+- `floraphonic-you-win-sequence-1-183948.mp3`
+- `floraphonic-you-win-sequence-2-183949.mp3`
+- `Jackpot-Millionaire.mp3`
 
 ## `lose.mp3`
 

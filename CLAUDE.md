@@ -1,12 +1,26 @@
 # Human Fruit Machine — project notes for Claude
 
 A standalone HTML/CSS/JS fruit-machine game for Menston Primary School's summer
-fete, designed to run on an iPhone/iPad mounted in a wooden cabinet. A child
-inserts a £1 coin (or a games-master credits them on a wristband), pulls a
-physical lever, and three reels spin to reveal a result. The cabinet is driven
-by an ESP32 over BLE HID keyboard input (lever potentiometer + coin sensor +
-easter-egg buttons + WS2812B LED strips); the same page also runs standalone
-in any browser with keyboard controls for testing.
+fete, running on an iPad mounted in a wooden booth. A child presses a big
+physical BUTTON (the lever was retired in v.21) and three reels spin; the iPad
+is the VOLUNTEER display — three helpers in the booth hold up the matching
+fruit props. The booth is run by an ESP32 (`button_wifi/` firmware): it is the
+WiFi access point, serves this page + sounds from LittleFS, reads the button /
+coin sensor / easter-egg buttons, and drives WS2812B LED strips from real game
+events over a WebSocket. The same page also runs standalone in any browser
+with keyboard controls for testing.
+
+**Deploy flow (self-sync)**: develop and test against GitHub Pages as always;
+the ESP32 downloads `index.html` + the sounds listed in `sync-manifest.txt`
+from Pages at boot whenever it can reach the home WiFi configured in
+`button_wifi.ino`. So: git push → power-cycle the ESP32 at home → the booth
+carries the new build. At the fete (no home WiFi) it boots straight into AP
+mode after ~10 s.
+
+**Origin split gotcha**: localStorage/IndexedDB are per-origin. Settings tuned
+on the Pages URL do NOT exist at `http://192.168.4.1` — use Admin → Settings →
+Transfer Settings (copy/paste JSON) to move them, or bake final values into
+`DEFAULTS` before fete day.
 
 This file exists so future Claude sessions don't re-litigate the long, hard
 debugging history of this project — especially the iOS Safari audio saga.
@@ -24,10 +38,12 @@ debugging history of this project — especially the iOS Safari audio saga.
   the branch IS publish to production.
 * **Persistence**: `localStorage` for settings + play history,
   `IndexedDB` (`hfm_sfx` database) for custom-uploaded SFX bytes.
-* **Hardware**: ESP32 firmware in `lever/` (BLE keyboard) and
-  `lever_wifi/` (WiFi WebSocket). Both talk to the same web page; the
-  page auto-detects which transport (WebSocket only fires when the page
-  is loaded over `http:`, i.e. served from the ESP32 itself).
+* **Hardware**: current ESP32 firmware is `button_wifi/` (WiFi AP +
+  WebSocket + LittleFS hosting + self-sync). `lever/` (BLE) and
+  `lever_wifi/` are superseded lever-era variants kept for reference.
+  The WebSocket transport only activates when the page is loaded over
+  `http:` (i.e. served from the ESP32 itself); on GitHub Pages the page
+  runs from keyboard input only.
 * **Audio**: HTML5 `<audio>` elements throughout. See the audio section
   below for the long, painful history of why Web Audio was abandoned.
 
@@ -37,9 +53,12 @@ debugging history of this project — especially the iOS Safari audio saga.
 index.html              # the entire web app
 sounds/                 # bundled MP3 SFX (see "Audio mapping" below)
 sounds/README.md        # file-by-file mapping
-lever/lever.ino         # ESP32 BLE-keyboard firmware
-lever_wifi/             # ESP32 WiFi+WebSocket firmware variant
+sync-manifest.txt       # files the ESP32 self-sync downloads from Pages
+button_wifi/            # CURRENT ESP32 firmware (button + AP + sync + LEDs)
+lever/lever.ino         # superseded BLE-keyboard firmware (lever era)
+lever_wifi/             # superseded WiFi firmware (lever era) — do not flash
 .github/workflows/      # GitHub Pages deploy
+REVIEW.md               # 2026-07 project review: findings + priorities
 ```
 
 ## Working in this repo
@@ -117,11 +136,12 @@ way…" — you won't. That door is closed. Use HTML5 `<audio>`.
   Unlocked on first user gesture by playing then pausing a silent WAV.
 * `playUrl(url, vol)` — grab a free pool element, set `src`, play.
 * `playBaked(key, dur, vol, renderFn)` — bake-if-needed then `playUrl`.
-* `playBundled(key, vol)` — play a static file from `_BUNDLED_FILES`
-  via the pool. Used for sounds we know exist (deployed in `sounds/`).
 * `bundledEl(key)` / `playBundledEl(key, vol)` — dedicated preloaded
-  element for files that might 404 (e.g. user-supplied uploads). The
-  element's `error` event flips `_bFailed[key]` so callers fall back.
+  element per bundled file. The element's `error` event flips
+  `_bFailed[key]` so callers fall back to the synth. `playBundled` is
+  now just a delegate to `playBundledEl` — every bundled sound goes
+  through the 404-aware path because an ESP32-hosted page with a failed
+  sound sync would otherwise play silence.
 * `_loseAudio` / `getLoseAudio()` / `playLoseSound(vol)` — dedicated
   HTMLAudioElement for `sounds/lose.mp3` (the sad-trombone loser
   sound).
@@ -168,32 +188,36 @@ See `sounds/README.md` for the file-by-file mapping. Summary:
 | Reel spin | `slot-machine-spin.mp3` (plays once — has stop sounds) | yes (looping click-bed) |
 | Lever clunk | **none** — included in spin clip | — |
 | Per-reel ching | **none** — included in spin clip | — |
-| Pair win | `floraphonic-you-win-sequence-1-…mp3` | yes |
-| Triple win | `floraphonic-you-win-sequence-2-…mp3` | yes |
-| Jackpot | `Jackpot-Millionaire.mp3` | yes |
+| Pair win | `floraphonic-…-bonus-1-183918.mp3` | yes |
+| Triple win | `floraphonic-…-bonus-2-183919.mp3` | yes |
+| Jackpot | `floraphonic-…-jackpot-3-183921.mp3` | yes |
 | Loser spin | `lose.mp3` (sad trombone) | yes (wah-wah) |
 | Secret button ⭐ | `mlg-airhorn.mp3` | yes (synth arpeggio) |
-| Secret button 👥 | `muttley-wheeze-or-laugh.mp3` (upload to enable) | yes (crowd ooh) |
+| Secret button 👥 | `muttley-wheeze-or-laugh.mp3` | yes (crowd ooh) |
 
-**Reel-stop timing**: `cfg.spinDuration` (default 1600ms) + `cfg.reelDelay`
-(default 650ms) are tuned so the three reels lock within the Jägerhaus
-clip's ~3.2s runtime, letting its built-in stop clunks line up with the
-reels. If the user wants to swap in a different spin clip, retune these in
-admin → Settings → Timing by ear.
+**Reel-stop timing**: `cfg.reelStops` (defaults 1890/2890/3890 ms, absolute
+from spin start) and `cfg.spinEnd` (5500 ms, when the fanfare fires) are
+tuned so the reels lock on the Jägerhaus clip's built-in stop clunks. If the
+user swaps in a different spin clip, retune in admin → Settings → Timing by
+ear. Any newly wired bundled file must ALSO be added to `sync-manifest.txt`
+or the ESP32-hosted page won't have it.
 
 ---
 
 ## Game flow & state machine
 
 ```
-(coin mode)    nocoin → ready → pulling → spinning → result → nocoin
-(credit mode)           ready → pulling → spinning → result → ready
+(coin mode)    nocoin → ready → spinning → result → nocoin
+(credit mode)           ready → spinning → result → ready
 ```
 
+(`pulling` still exists in code for the legacy BLE lever path but nothing
+current enters it.)
+
 `cfg.requireCoin` (admin → Settings → Game Mode) toggles between the two.
-Default is `true` (coin mode — classic flow). **Credit mode** is for the
+Default is `false` (credit mode — fete flow). **Credit mode** is for the
 school fete with wristbands: a games-master stamps a wristband for X
-goes, and the player just pulls the lever each time — no coin step.
+goes, and the player just presses the button each time — no coin step.
 
 `idleState()` returns the resting state for the current mode. The save
 handler calls `applyCoinMode()` (toggles `body.no-coin` class) and resets
@@ -204,21 +228,27 @@ mid-game without a reload.
 
 The web page can be driven by:
 
-* **Keyboard** (laptop testing): `C` coin, `1-5` lever level, `Space` /
-  `Enter` spin, `A` ahem, `Q`/`W`/`E` secret buttons.
-* **BLE HID keyboard** (ESP32 in `lever/`): same keystrokes, sent by
-  the firmware in response to physical inputs.
-* **WiFi WebSocket** (ESP32 in `lever_wifi/`): structured JSON
-  messages on `ws://<esp32-ip>/ws` — see `connectEsp32Ws()` in
-  `index.html`. Auto-enabled only when the page is loaded over `http:`
-  (i.e. from the ESP32's own webserver). On GitHub Pages this is a
-  no-op.
-* **Mobile touch UI**: bottom bar with coin button (hidden in credit
-  mode), draggable lever, and three secret buttons.
+* **Keyboard** (laptop testing): `C` coin, `Space` / `Enter` spin (or
+  reset after a result), `A` ahem, `Q`/`W`/`E` secret buttons. (`1-5`
+  legacy lever levels still parse but nothing sends them.)
+* **WiFi WebSocket** (ESP32 in `button_wifi/`): JSON on
+  `ws://<esp32-ip>/ws` — `{"t":"button"}` for the spin button (the page
+  applies the coin gate: `nocoin` state → ahem, otherwise spin/reset),
+  `{"t":"coin"}`, `{"t":"egg","n":0-2}`. Auto-enabled only when the page
+  is loaded over `http:` (served from the ESP32). On GitHub Pages this
+  is a no-op. The page sends back `spin_start` / `reel` / `result` /
+  `state` for the LED show.
+* **Mobile touch UI**: on-screen spin button (single `click` handler —
+  do NOT add a `pointerdown` handler, one tap would fire both) and the
+  three secret buttons in the bottom bar.
 
 In credit mode the ESP32 still sends its physical `coin` event, but the
-page ignores it. The `release` event also bypasses the coin gate — every
-lever release counts as a spin trigger.
+page ignores it.
+
+**Start overlay**: `#start-overlay` covers the page until the first
+trusted gesture (`_startAudio`) removes it. It exists because WebSocket
+events are not trusted gestures — without one deliberate tap after every
+page load, iOS keeps all audio locked and the booth runs silently.
 
 ## Settings (admin panel)
 
@@ -243,6 +273,14 @@ bar):
 
 ## History of major changes (most recent first)
 
+* `v2026-07-03.1` — **Booth architecture**: new `button_wifi/` firmware
+  (button input on GPIO 19, egg switches moved off floating GPIO 35/36,
+  ArduinoJson message parsing, serves `sounds/` from LittleFS, self-sync
+  from GitHub Pages via `sync-manifest.txt`). Web: TAP TO START overlay
+  (audio unlock), bundled-sound 404 → synth fallback, removed the
+  pointerdown/click double-fire on the spin button, key auto-repeat
+  guard, Transfer Settings JSON copy/paste in admin.
+* `v2026-06-20.21` — Lever retired; button-only input.
 * `v2026-06-20.14` — Credit mode (no-coin toggle for fete wristbands).
   Spin sound = Jägerhaus once-through (provides its own stops);
   removed per-reel ching + lever clunk. Split win sound into pair vs.
@@ -283,11 +321,17 @@ bar):
 
 ## Hardware
 
-See header comments in `lever/lever.ino` and `lever_wifi/lever_wifi.ino`
-for pinouts. Both firmwares need batteries, a buck converter for the
-LED strips (50 LEDs at full white ≈ 3 A), and the same potentiometer +
-coin sensor wiring.
+See the header of `button_wifi/button_wifi.ino` for the current pinout,
+library versions, and flash steps. Power: buck converter for the LED
+strips (50 LEDs at full white ≈ 3 A) with common ground to the ESP32.
+Do NOT put inputs on GPIO 34-39 — those pins are input-only with no
+internal pull-ups (the old firmwares' egg switches on 35/36 floated and
+fired at random; that is why they moved to 33/21/22).
 
-The cabinet uses an iPad mounted behind a cutout, displaying this page
-in full-screen Safari. The "Add to Home Screen" PWA mode is what the
-`apple-mobile-web-app-capable` meta tag is for.
+The booth uses an iPad as the volunteer display, running this page in
+full-screen Safari on the ESP32's access point. Fete-day iPad checklist:
+forget/disable Auto-Join on every other WiFi network (iOS hops off
+internet-less APs), disable auto-lock, enable Guided Access, mains or
+battery power, wired audio out (3.5 mm jack on a 9th-gen iPad; USB-C PD
+hub with 3.5 mm out on newer ones — never Bluetooth speakers), and one
+tap on the TAP TO START overlay after loading the page.

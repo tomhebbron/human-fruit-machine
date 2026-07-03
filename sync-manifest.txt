@@ -1,0 +1,12 @@
+# Files the ESP32 downloads from GitHub Pages into LittleFS at boot
+# (button_wifi firmware, sync mode). One repo-relative path per line.
+# Only the sounds actually wired in _BUNDLED_FILES — total ~0.9 MB.
+index.html
+sounds/freesound_community-cash-register-purchase-87313.mp3
+sounds/slot-machine-spin.mp3
+sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3
+sounds/floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3
+sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3
+sounds/mlg-airhorn.mp3
+sounds/muttley-wheeze-or-laugh.mp3
+sounds/lose.mp3

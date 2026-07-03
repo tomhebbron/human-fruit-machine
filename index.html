@@ -542,6 +542,42 @@
     .pb-jackpot { border-color: rgba(255,215,0,0.45);  color: var(--gold);     background: rgba(255,215,0,0.07); }
     .pb-three   { border-color: rgba(0,230,118,0.4);   color: var(--green);    background: rgba(0,230,118,0.05); }
     .pb-two     { border-color: rgba(255,255,255,0.18); color: var(--text-dim); }
+
+    /* ── Start overlay — first tap unlocks iOS audio ── */
+    #start-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      background: var(--bg);
+      cursor: pointer;
+    }
+    #start-overlay .so-icon  { font-size: clamp(4rem, 18vw, 9rem); }
+    #start-overlay .so-title {
+      font-size: clamp(1.4rem, 6vw, 3rem);
+      font-weight: 900;
+      color: var(--gold);
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 30px var(--gold-glow);
+      animation: coin-pulse 1.4s ease-in-out infinite;
+    }
+    #start-overlay .so-sub { font-size: 0.85rem; color: var(--text-dim); }
+
+    textarea {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: var(--text);
+      padding: 0.4rem 0.6rem;
+      border-radius: 0.4rem;
+      font-size: 0.72rem;
+      font-family: monospace;
+      width: 100%;
+      resize: vertical;
+    }
   </style>
 </head>
 <body>
@@ -766,6 +802,20 @@
           </div>
         </div>
         <button class="save-btn" id="save-settings">Save Settings ✅</button>
+        <div class="setting-group">
+          <h4>Transfer Settings</h4>
+          <p style="font-size:0.78rem;color:var(--text-dim)">
+            Settings live per-browser <em>per address</em> — tuning done on the GitHub Pages
+            URL does not follow you to the ESP32's address (or vice versa). Copy the JSON
+            below on one, paste and apply on the other.
+          </p>
+          <textarea id="s-json" rows="4" spellcheck="false"></textarea>
+          <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
+            <button class="save-btn" id="cfg-copy" style="background:var(--surface2);color:var(--text);border:1px solid rgba(255,255,255,0.15)">📋 Copy current</button>
+            <button class="save-btn" id="cfg-apply">Apply pasted JSON</button>
+          </div>
+          <div id="cfg-transfer-out" style="font-size:0.75rem;color:var(--text-dim);min-height:1.1em"></div>
+        </div>
       </div>
     </div>
 
@@ -784,17 +834,18 @@
 
     <div id="tab-keys" class="tab-panel">
       <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">
-        ESP32 sends these as BLE keyboard presses. You can also type them directly to test without hardware.
+        Keyboard shortcuts for testing on a laptop. The booth hardware (button_wifi firmware)
+        sends the same actions as WebSocket messages: button press = Space, plus coin and
+        the three secret buttons.
       </p>
       <div class="key-guide">
         <div class="key-pill"><kbd>C</kbd><span>Coin inserted → coin sound + ready</span></div>
-        <div class="key-pill"><kbd>1</kbd><span>Lever ¼ pull → ratchet slow</span></div>
-        <div class="key-pill"><kbd>2</kbd><span>Lever ½ pull → ratchet medium</span></div>
-        <div class="key-pill"><kbd>3</kbd><span>Lever ¾ pull → ratchet fast</span></div>
-        <div class="key-pill"><kbd>4</kbd><span>Lever nearly home → ratchet rapid</span></div>
-        <div class="key-pill"><kbd>5</kbd><span>Lever bottomed → clunk</span></div>
-        <div class="key-pill"><kbd>Space</kbd><span>Lever released → SPIN (or reset after result)</span></div>
-        <div class="key-pill"><kbd>A</kbd><span>Lever pulled with no coin → ahem</span></div>
+        <div class="key-pill"><kbd>Space</kbd><span>Spin button → SPIN (or reset after result)</span></div>
+        <div class="key-pill"><kbd>A</kbd><span>Button with no coin → ahem</span></div>
+        <div class="key-pill"><kbd>Q</kbd><span>Secret ⭐ — airhorn + party</span></div>
+        <div class="key-pill"><kbd>W</kbd><span>Secret 🎉 — arm forced jackpot</span></div>
+        <div class="key-pill"><kbd>E</kbd><span>Secret 👥 — Muttley / crowd</span></div>
+        <div class="key-pill"><kbd>1</kbd>–<kbd>5</kbd><span>Legacy lever levels (old BLE firmware only)</span></div>
       </div>
       <p style="color:var(--text-dim);font-size:0.8rem;margin-top:0.5rem">
         Tip: open this page in a browser on your laptop and run through a full play with the keyboard before fair day.
@@ -836,10 +887,19 @@
 
 </div><!-- /app -->
 
+<!-- Removed by the first tap/click/keypress (_startAudio). iOS only unlocks
+     audio inside a trusted gesture; when all input arrives over the ESP32
+     WebSocket the page would otherwise stay silent with no indication. -->
+<div id="start-overlay">
+  <div class="so-icon">🎰</div>
+  <div class="so-title">TAP TO START</div>
+  <div class="so-sub">one tap turns the sound on</div>
+</div>
+
 <script>
 'use strict';
 
-const VERSION = '2026-06-20.24';
+const VERSION = '2026-07-03.1';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1178,7 +1238,18 @@ function playBaked(key, durationSec, vol, renderFn) {
 // Dedicated looping element for the continuous spin sound.
 let _spinEl = null, _spinWant = false;
 function getSpinEl() {
-  if (!_spinEl) { _spinEl = new Audio(); _spinEl.setAttribute('playsinline', ''); _spinEl.loop = true; }
+  if (!_spinEl) {
+    _spinEl = new Audio();
+    _spinEl.setAttribute('playsinline', '');
+    _spinEl.loop = true;
+    // Missing spin clip (404) → flag it so startSpinSound uses the synth bed.
+    _spinEl.addEventListener('error', () => {
+      if (_spinEl.src && _spinEl.src.indexOf('blob:') !== 0) {
+        _bFailed.spin = true;
+        _alog('spin clip missing — synth click-bed fallback');
+      }
+    });
+  }
   return _spinEl;
 }
 
@@ -1220,13 +1291,11 @@ const _BUNDLED_FILES = {
   egg2:      'sounds/muttley-wheeze-or-laugh.mp3',        // secret 👥 button (upload to enable)
 };
 
-// Play a bundled file through the (already-unlocked) pool. Returns true
-// optimistically — fine for files we know exist.
+// Play a bundled file via its dedicated element so a 404 (e.g. the page is
+// served from an ESP32 whose sound sync failed) flips the failed flag and the
+// caller falls through to the synth instead of silent nothing.
 function playBundled(key, vol) {
-  const f = _BUNDLED_FILES[key];
-  if (!f) return false;
-  playUrl(f, vol);
-  return true;
+  return playBundledEl(key, vol);
 }
 
 // Bundled file via a dedicated, preloaded element so a missing file (404) flips a
@@ -1469,8 +1538,8 @@ function startSpinSound(vol) {
     se.play().catch(e => _alog('spin (custom) play rejected', e.name));
     return () => { _spinWant = false; if (_spinEl) { try { _spinEl.pause(); } catch(_){} } };
   }
-  // 2) Bundled Jägerhaus clip (default).
-  const spinUrl = _BUNDLED_FILES.spin;
+  // 2) Bundled Jägerhaus clip (default), unless it 404'd.
+  const spinUrl = _bFailed.spin ? null : _BUNDLED_FILES.spin;
   if (spinUrl) {
     se.loop = false;                         // clip has built-in stops — play once
     if (se.src !== spinUrl) se.src = spinUrl;
@@ -1872,6 +1941,12 @@ function connectEsp32Ws() {
         const msg = JSON.parse(e.data);
         switch (msg.t) {
           case 'coin':    if (cfg.requireCoin) onCoin();   break;
+          case 'button':
+            // Physical spin button (button_wifi firmware). The page owns the
+            // coin gate: no coin in coin mode → polite ahem instead of a spin.
+            if (state === 'nocoin') onAhem();
+            else onSpace();
+            break;
           case 'lever':   onLeverLevel(msg.n); break;
           case 'release':
             onLeverLevel(0);
@@ -1900,6 +1975,7 @@ connectEsp32Ws();  // no-op on GitHub Pages (http: check fails)
 // ═══════════════════════════════════════════════════════════════
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.repeat) return;   // a held key must not chain reset → spin → reset…
   const k = e.key.toLowerCase();
 
   if (k === 'c')             { if (cfg.requireCoin) onCoin();  return; }
@@ -1916,8 +1992,12 @@ document.addEventListener('keyup', () => {
   document.getElementById('spin-btn').classList.remove('pressed');
 });
 
+// Single click handler only — an additional pointerdown handler double-fires
+// on touch devices (pointerdown then click in the same tap), which turned
+// "Again!" into an instant re-spin and, in coin mode, a free credit.
 document.getElementById('spin-btn').addEventListener('click', () => {
-  // Button tap acts as either Space (spin/reset) or coin insert if no coin yet.
+  unlockPool();
+  // Tap acts as either Space (spin/reset) or coin insert if no coin yet.
   // In credit mode there is no 'nocoin' state so it always behaves as Space.
   if (state === 'nocoin') onCoin();
   else onSpace();
@@ -1932,16 +2012,19 @@ function _startAudio() {
   document.removeEventListener('click',      _startAudio);
   document.removeEventListener('keydown',    _startAudio);
   _alog('_startAudio(): first gesture — unlocking HTML5 audio');
+  const ov = document.getElementById('start-overlay');
+  if (ov) ov.remove();
   unmuteIos();
   unlockPool();
-  // Prime the dedicated elements (lose.mp3, spin loop) with a muted play/pause
-  // so later timer-driven plays are allowed by iOS.
+  // Prime every dedicated element (lose.mp3, spin clip, bundled SFX) with a
+  // muted play/pause so later timer-driven plays are allowed by iOS — and so
+  // any 404 (ESP32-hosted with a failed sound sync) flags _bFailed early,
+  // letting the game fall back to synths instead of playing silence.
   const la = getLoseAudio();
   const se = getSpinEl();
   if (!se.src) se.src = _BUNDLED_FILES.spin || makeWavUrl(0, 0.05);
-  const e1 = bundledEl('egg1');   // airhorn (file present)
-  const e2 = bundledEl('egg2');   // Muttley (may 404 — handled by bundledEl)
-  [la, se, e1, e2].filter(Boolean).forEach(el => {
+  const els = ['coin', 'pairWin', 'tripleWin', 'jackpot', 'egg1', 'egg2'].map(bundledEl);
+  [la, se, ...els].filter(Boolean).forEach(el => {
     try {
       el.muted = true;
       const p = el.play();
@@ -2041,6 +2124,7 @@ function syncSettingsUI() {
   document.getElementById('s-pence-two').value     = cfg.prizePence?.two     ?? 20;
   document.getElementById('s-pence-three').value   = cfg.prizePence?.three   ?? 50;
   document.getElementById('s-pence-jackpot').value = cfg.prizePence?.jackpot ?? 200;
+  document.getElementById('s-json').value = JSON.stringify(cfg);
   refreshLabels();
 }
 
@@ -2195,6 +2279,39 @@ document.getElementById('save-settings').addEventListener('click', () => {
   const btn = document.getElementById('save-settings');
   btn.textContent = 'Saved! ✅';
   setTimeout(() => { btn.textContent = 'Save Settings ✅'; }, 1800);
+});
+
+// Settings transfer — the JSON textarea bridges the per-origin localStorage
+// split between the GitHub Pages URL and the ESP32-served page.
+document.getElementById('cfg-copy').addEventListener('click', () => {
+  const ta  = document.getElementById('s-json');
+  const out = document.getElementById('cfg-transfer-out');
+  ta.value = JSON.stringify(cfg);
+  ta.focus(); ta.select();
+  const done = () => { out.textContent = 'Copied — paste into the other device/address.'; };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(ta.value).then(done, done);
+  else { try { document.execCommand('copy'); } catch(_) {} done(); }
+});
+
+document.getElementById('cfg-apply').addEventListener('click', () => {
+  const out = document.getElementById('cfg-transfer-out');
+  try {
+    const s = JSON.parse(document.getElementById('s-json').value);
+    cfg = { ...DEFAULTS, ...s,
+      prizes:     { ...DEFAULTS.prizes,     ...(s.prizes     || {}) },
+      prizePence: { ...DEFAULTS.prizePence, ...(s.prizePence || {}) } };
+    saveCfg(cfg);
+    syncSettingsUI();
+    updatePrizeBoard();
+    applyCoinMode();
+    if (state === 'nocoin' || state === 'ready' || state === 'result') {
+      state = idleState();
+      updateUI();
+    }
+    out.textContent = 'Applied and saved.';
+  } catch (e) {
+    out.textContent = 'Invalid JSON: ' + e.message;
+  }
 });
 
 document.getElementById('clear-history').addEventListener('click', () => {
@@ -2466,11 +2583,8 @@ loadSfxFromDb();
 if (isTouchDevice) {
   document.body.classList.add('touch-device');
 
-  // Spin button on-screen (fallback for testing without the physical button)
-  document.getElementById('spin-btn').addEventListener('pointerdown', () => {
-    unlockPool();
-    onSpace();
-  });
+  // (The on-screen spin button uses only its click handler above — do not add
+  // a pointerdown handler here; one tap would fire both.)
 
   // Easter egg buttons (gamemaster use)
   document.querySelectorAll('.mob-egg-btn').forEach(btn => {

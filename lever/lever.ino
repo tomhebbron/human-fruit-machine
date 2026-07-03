@@ -1,4 +1,8 @@
 /*
+ * SUPERSEDED by button_wifi/button_wifi.ino (lever hardware retired;
+ * this variant also has floating egg pins on GPIO 35/36). Kept only as
+ * an emergency BLE fallback — needs the button rework before use.
+ *
  * Human Fruit Machine — BLE HID Keyboard Lever  (NeoPixel edition)
  * ==================================================================
  * Same BLE HID keyboard behaviour as v1, but LED output now uses

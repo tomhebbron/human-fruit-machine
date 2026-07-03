@@ -1,4 +1,8 @@
 /*
+ * SUPERSEDED by button_wifi/button_wifi.ino (lever hardware retired;
+ * this variant also has known bugs: floating egg pins on GPIO 35/36 and
+ * substring JSON parsing). Kept for reference only — do not flash.
+ *
  * Human Fruit Machine — WiFi Hotspot + WebSocket + NeoPixel edition
  * ==================================================================
  * ESP32 runs as a WiFi access point, serves index.html from LittleFS,
