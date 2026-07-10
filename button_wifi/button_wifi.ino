@@ -39,20 +39,23 @@
  *   4 data lines, 1000 µF cap across 5V/GND at the supply, common GND
  *   with the ESP32. GPIO 16 is unavailable on WROVER — WROOM only.
  *
- * ── Buttons ──────────────────────────────────────────────────────
- *   Big red spin button (right):  switch → GPIO 19 to GND (INPUT_PULLUP)
- *                                 lamp   → GPIO 23 (PWM). Drive a plain
- *       LED + resistor directly; if the button has a 5-12 V lamp, switch
- *       it through a logic-level MOSFET instead. Lamp shows game state:
- *       breathing = ready, off = spinning, blinking = press to reset.
- *   Light-up buttons, one under each reel window (the easter eggs):
- *       switches → GPIO 33 / 21 / 22 to GND (INPUT_PULLUP)
- *       LEDs     → GPIO 25 / 26 / 27 via 330 Ω (PWM)
- *       Their LEDs mirror their reel: lit when that reel locks/wins.
- *       NOTE: moved off GPIO 35/36 — input-only pins with NO internal
- *       pull-ups; they float and fire at random.
- *   KY-010 coin OUT → GPIO 32 (LOW = coin)
- *   Onboard LED     → GPIO 2 (AP up / sync activity)
+ * ── Buttons (5 in a row: blue white green yellow red) ────────────
+ *   Every switch wires GPIO -> GND (INPUT_PULLUP); pressed = LOW. The
+ *   switches need NO power — two wires each. Lamps are 12 V via a
+ *   driver (ULN2803, or a transistor per lamp) and are OPTIONAL; the
+ *   buttons work unlit. Minimal build = wire the switches + red lamp.
+ *     RED    (spin):  switch GPIO 19    lamp GPIO 23  (favoured flash)
+ *     BLUE   (egg):   switch GPIO 33    lamp GPIO 25
+ *     WHITE  (egg):   switch GPIO 21    lamp GPIO 26
+ *     GREEN  (egg):   switch GPIO 22    lamp GPIO 27
+ *     YELLOW (egg):   switch GPIO 32    lamp GPIO 17
+ *   Red starts the spin (its lamp breathes "press me"); the four
+ *   colours play funny sounds. The force-jackpot cheat is deliberately
+ *   NOT on any public button (gamemaster keeps it on the keyboard).
+ *   Coin slot abandoned. Keep switches off GPIO 34-39 (input-only, no
+ *   pull-ups — they float). Onboard LED GPIO 2 = AP up / sync activity.
+ *   On power-up, a self-test chases the button lamps then races a
+ *   rainbow round the reel windows so you can see everything is alive.
  *
  * ── Build (tested targets — pin these) ──────────────────────────
  *   Board: ESP32 Dev Module (classic WROOM), ESP32 Arduino core 3.x
@@ -70,7 +73,7 @@
  *   home WiFi once, watch Serial for "Sync ok".
  *
  * ── WebSocket protocol ───────────────────────────────────────────
- *   ESP32 → page:  {"t":"coin"}  {"t":"button"}  {"t":"egg","n":0-2}
+ *   ESP32 → page:  {"t":"button"}  {"t":"egg","n":0|2}
  *   page → ESP32:  {"t":"spin_start"}  {"t":"reel","n":0-2}
  *                  {"t":"result","type":"jackpot"|"three"|"two"|"none",
  *                   "m":[matched reel indices]}
@@ -120,18 +123,19 @@ const int CABINET_LEDS = Z_REELS;   // the three ambient zones are contiguous
 CRGB    leds[TOTAL_LEDS];
 uint8_t gHue = 0;
 
-// ── Buttons / sensors ────────────────────────────────────────────
-const int BUTTON_PIN   = 19;
-const int SPIN_LED_PIN = 23;
-const int COIN_PIN     = 32;
-const int LED_PIN      = 2;
-const int EGG_COUNT    = 3;
-const int EGG_SW[]     = {33, 21, 22};   // under reel windows 0 / 1 / 2
-const int EGG_LED[]    = {25, 26, 27};
+// ── Buttons (5 in a row: blue white green yellow red) ────────────
+const int BUTTON_PIN   = 19;   // RED spin button switch
+const int SPIN_LED_PIN = 23;   // RED button lamp (favoured "press me" flash)
+const int LED_PIN      = 2;    // onboard LED (AP up / sync activity)
+const int EGG_COUNT    = 4;
+const int EGG_SW[]     = {33, 21, 22, 32};   // blue / white / green / yellow switches
+const int EGG_LED[]    = {25, 26, 27, 17};   // their lamps (optional, 12 V via driver)
+// Which web-app egg each colour button fires: 0 = party horn, 2 = crowd
+// "ooh". NEVER 1 — that's the force-jackpot cheat, kept off public buttons.
+const int EGG_SEND[]   = {0, 2, 0, 2};
 
-const unsigned long BTN_DEBOUNCE_MS  = 40;
-const unsigned long COIN_DEBOUNCE_MS = 500;
-const unsigned long EGG_DEBOUNCE_MS  = 200;
+const unsigned long BTN_DEBOUNCE_MS = 40;
+const unsigned long EGG_DEBOUNCE_MS = 200;
 
 // ── Server ───────────────────────────────────────────────────────
 AsyncWebServer server(80);
@@ -288,7 +292,7 @@ void updateLights() {
     }
 
     case LM_EGG: {
-      static const CRGB eggC[] = { CRGB(255, 80, 0), CRGB(255, 215, 0), CRGB(0, 230, 120) };
+      static const CRGB eggC[] = { CRGB(0, 120, 255), CRGB(255, 255, 255), CRGB(0, 230, 120), CRGB(255, 200, 0) };
       bool on = (millis() / 38) % 2;
       fill_solid(leds, TOTAL_LEDS, (eggFlash < EGG_COUNT && on) ? eggC[eggFlash] : CRGB::Black);
       for (int i = 0; i < EGG_COUNT; i++)
@@ -430,12 +434,38 @@ void syncFromPages() {
   WiFi.disconnect(true);
 }
 
+// ── Power-on self-test ────────────────────────────────────────────
+// Chase the button lamps blue->white->green->yellow->red, then race a
+// pair of colour comets round every LED. Purely visual — proves each
+// lamp wire and every strip pixel at switch-on, before the game starts.
+void bootSelfTest() {
+  Serial.println("Self-test: button lamp chase + reel rainbow race");
+  const int lamps[5] = { EGG_LED[0], EGG_LED[1], EGG_LED[2], EGG_LED[3], SPIN_LED_PIN };
+  for (int pass = 0; pass < 2; pass++) {
+    for (int i = 0; i < 5; i++) {
+      for (int j = 0; j < 5; j++) ledcWrite(lamps[j], j == i ? 255 : 0);
+      delay(130);
+    }
+  }
+  for (int j = 0; j < 5; j++) ledcWrite(lamps[j], 0);
+
+  for (unsigned long t0 = millis(); millis() - t0 < 2200; ) {
+    fadeToBlackBy(leds, TOTAL_LEDS, 48);
+    int p = (millis() / 6) % TOTAL_LEDS;
+    uint8_t h = (uint8_t)(millis() / 8);
+    leds[p] = CHSV(h, 255, 255);
+    leds[(p + TOTAL_LEDS / 2) % TOTAL_LEDS] = CHSV(h + 128, 255, 255);
+    FastLED.show();
+    delay(6);
+  }
+  FastLED.clear(true);
+}
+
 // ── Setup ─────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   pinMode(LED_PIN,    OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(COIN_PIN,   INPUT_PULLUP);
   ledcAttach(SPIN_LED_PIN, 1000, 8);
   for (int i = 0; i < EGG_COUNT; i++) {
     pinMode(EGG_SW[i], INPUT_PULLUP);
@@ -448,6 +478,7 @@ void setup() {
   FastLED.addLeds<WS2812B, PIN_REELS,    GRB>(leds, Z_REELS, NUM_REELS_ALL);
   FastLED.setBrightness(LED_BRIGHT);
   FastLED.clear(true);
+  bootSelfTest();
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed!");
 
@@ -501,16 +532,7 @@ void loop() {
     }
   }
 
-  // Coin (page applies the coin/credit-mode gate)
-  static unsigned long lastCoinMs = 0;
-  if (digitalRead(COIN_PIN) == LOW && (now - lastCoinMs) > COIN_DEBOUNCE_MS) {
-    lastCoinMs = now;
-    broadcast("{\"t\":\"coin\"}");
-    setLight(LM_COIN);
-    Serial.println("COIN -> {\"t\":\"coin\"}");
-  }
-
-  // Light-up buttons under the reel windows (easter eggs)
+  // Colour buttons (blue/white/green/yellow) — play easter-egg sounds.
   static bool          eggHeld[EGG_COUNT]   = {};
   static unsigned long eggLastMs[EGG_COUNT] = {};
   for (int i = 0; i < EGG_COUNT; i++) {
@@ -520,7 +542,7 @@ void loop() {
       eggLastMs[i] = now;
       eggFlash     = i;
       char buf[24];
-      snprintf(buf, sizeof(buf), "{\"t\":\"egg\",\"n\":%d}", i);
+      snprintf(buf, sizeof(buf), "{\"t\":\"egg\",\"n\":%d}", EGG_SEND[i]);
       broadcast(buf);
       setLight(LM_EGG);
     } else if (!pressed) {
