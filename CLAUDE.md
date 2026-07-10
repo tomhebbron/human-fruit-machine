@@ -299,6 +299,10 @@ bar):
 
 ## History of major changes (most recent first)
 
+* `v2026-07-10.2` — Configurable price per go (`cfg.goesPerToken` +
+  `cfg.tokenPence`, e.g. 3 goes per £1 token → `pricePerGo()` = 33.3p). The
+  calibration sim now always shows takings / net profit / RTP from that price
+  (no longer gated on coin mode).
 * `v2026-07-10.1` — Configurable fruit set (`cfg.fruits`) + configurable
   jackpot symbol/rate (`cfg.jackpotFruit`, `cfg.jackpotChance`, decoupled
   from three-of-a-kind). See "Fruit & jackpot" under Settings.

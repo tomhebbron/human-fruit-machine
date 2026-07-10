@@ -874,8 +874,23 @@
           </div>
         </div>
         <div class="setting-group">
+          <h4>Pricing</h4>
+          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem">
+            What a player pays. e.g. "3 goes per token, token = 100p" = 3 goes for £1.
+          </p>
+          <div class="setting-row">
+            <label>Goes per token</label>
+            <input type="number" id="s-goes-per-token" min="1" max="20" step="1" value="1" style="width:5rem">
+          </div>
+          <div class="setting-row">
+            <label>Token value (p)</label>
+            <input type="number" id="s-token-pence" min="0" max="1000" step="1" value="100" style="width:5rem">
+          </div>
+          <p id="price-per-go-hint" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.2rem"></p>
+        </div>
+        <div class="setting-group">
           <h4>Prize Costs (for profit tracking)</h4>
-          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem">What each prize costs the stall in pence — used to calculate profit in Stats. Entry is £1 per go.</p>
+          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.4rem">What each prize costs the stall in pence — used to calculate profit in the calibration sim.</p>
           <div class="setting-row">
             <label>Pair prize cost (p)</label>
             <input type="number" id="s-pence-two" min="0" max="500" value="20">
@@ -997,7 +1012,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-10.1';
+const VERSION = '2026-07-10.2';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1128,6 +1143,10 @@ const DEFAULTS = {
     jackpot: 'JACKPOT — see the organ grinder! 🏆',
   },
   prizePence: { two: 1, three: 11, jackpot: 400 },
+  // Pricing: "goesPerToken goes for tokenPence" (e.g. 3 goes for a £1 token).
+  // Price per go = tokenPence / goesPerToken. Used for revenue/profit in the sim.
+  goesPerToken: 1,
+  tokenPence:   100,
 };
 
 function loadCfg() {
@@ -1146,6 +1165,12 @@ function loadCfg() {
 }
 
 function saveCfg(c) { localStorage.setItem('hfm_cfg', JSON.stringify(c)); }
+
+// Pence a player pays per go (tokenPence spread across goesPerToken goes).
+function pricePerGo() {
+  const gpt = Math.max(1, cfg.goesPerToken || 1);
+  return (cfg.tokenPence ?? 100) / gpt;
+}
 
 function loadHistory() {
   try { const h = localStorage.getItem('hfm_hist'); return h ? JSON.parse(h) : []; }
@@ -2388,8 +2413,20 @@ function syncSettingsUI() {
   document.getElementById('s-pence-two').value     = cfg.prizePence?.two     ?? 20;
   document.getElementById('s-pence-three').value   = cfg.prizePence?.three   ?? 50;
   document.getElementById('s-pence-jackpot').value = cfg.prizePence?.jackpot ?? 200;
+  document.getElementById('s-goes-per-token').value = cfg.goesPerToken ?? 1;
+  document.getElementById('s-token-pence').value    = cfg.tokenPence   ?? 100;
   document.getElementById('s-json').value = JSON.stringify(cfg);
   refreshLabels();
+  updatePriceHint();
+}
+
+function updatePriceHint() {
+  const gpt = Math.max(1, parseInt(document.getElementById('s-goes-per-token').value) || 1);
+  const tp  = parseInt(document.getElementById('s-token-pence').value);
+  const pence = (isNaN(tp) ? 0 : tp) / gpt;
+  const per = pence % 1 === 0 ? pence + 'p' : pence.toFixed(1) + 'p';
+  document.getElementById('price-per-go-hint').textContent =
+    tp ? `= ${per} per go` : 'Free play (£0 per go)';
 }
 
 function refreshLabels() {
@@ -2510,6 +2547,10 @@ document.querySelectorAll('.tab').forEach(btn => {
   document.getElementById(id).addEventListener('input', refreshLabels);
 });
 
+['s-goes-per-token','s-token-pence'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePriceHint);
+});
+
 document.getElementById('save-settings').addEventListener('click', () => {
   const chosenFruits = [...document.querySelectorAll('.fruit-check:checked')].map(c => c.value);
   if (chosenFruits.length < 3) {
@@ -2545,6 +2586,8 @@ document.getElementById('save-settings').addEventListener('click', () => {
       three:   parseInt(document.getElementById('s-pence-three').value)   || 0,
       jackpot: parseInt(document.getElementById('s-pence-jackpot').value) || 0,
     },
+    goesPerToken: Math.max(1, parseInt(document.getElementById('s-goes-per-token').value) || 1),
+    tokenPence:   parseInt(document.getElementById('s-token-pence').value) || 0,
   };
   saveCfg(cfg);
   updatePrizeBoard();
@@ -2760,16 +2803,19 @@ function doSim(n) {
     const totalPrize  = pairCost + threeCost + jackpotCost;
     const gbp = p => '£' + (Math.abs(p) / 100).toFixed(2);
 
-    let financeRows;
-    if (cfg.requireCoin) {
-      const rev   = n * 100;
-      const profit = rev - totalPrize;
-      const rtp   = (totalPrize / rev * 100).toFixed(1);
-      const pc    = profit >= 0 ? 'var(--green)' : 'orange';
-      financeRows = `
-        <tr><td>💰 Revenue (${n} × £1)</td>
-            <td></td><td></td>
-            <td style="text-align:right;color:var(--green)">${gbp(rev)}</td></tr>
+    const ppg    = pricePerGo();               // pence per go
+    const rev    = n * ppg;
+    const profit = rev - totalPrize;
+    const rtp    = rev > 0 ? (totalPrize / rev * 100).toFixed(1) + '%' : '—';
+    const pc     = profit >= 0 ? 'var(--green)' : 'orange';
+    const perGoLabel = ppg % 1 === 0 ? ppg + 'p' : ppg.toFixed(1) + 'p';
+    const revRow = rev > 0
+      ? `<tr><td>💰 Takings (${n} × ${perGoLabel})</td>
+             <td></td><td></td>
+             <td style="text-align:right;color:var(--green)">${gbp(rev)}</td></tr>`
+      : '';
+    const financeRows = `
+        ${revRow}
         <tr><td>🎉 Pair prizes</td>
             <td style="text-align:right">${twos}</td>
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.two ?? 20)}</td>
@@ -2783,29 +2829,9 @@ function doSim(n) {
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
             <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
         <tr style="border-top:1px solid rgba(255,255,255,0.15)">
-            <td><strong>Net profit</strong></td>
-            <td colspan="2" style="text-align:right;color:var(--text-dim)">RTP ${rtp}%</td>
-            <td style="text-align:right;font-weight:700;color:${pc}">${profit<0?'−':''}${gbp(profit)}</td></tr>`;
-    } else {
-      const avg = (totalPrize / n).toFixed(1);
-      financeRows = `
-        <tr><td>🎉 Pair prizes</td>
-            <td style="text-align:right">${twos}</td>
-            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.two ?? 20)}</td>
-            <td style="text-align:right;color:orange">−${gbp(pairCost)}</td></tr>
-        <tr><td>🎰 Three-of-a-kind prizes</td>
-            <td style="text-align:right">${threes}</td>
-            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.three ?? 50)}</td>
-            <td style="text-align:right;color:orange">−${gbp(threeCost)}</td></tr>
-        <tr><td>${jackpotFruit().emoji} Jackpot prizes</td>
-            <td style="text-align:right">${jacks}</td>
-            <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
-            <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
-        <tr style="border-top:1px solid rgba(255,255,255,0.15)">
-            <td><strong>Total prize cost</strong></td>
-            <td colspan="2" style="text-align:right;color:var(--text-dim)">${avg}p/game avg</td>
-            <td style="text-align:right;font-weight:700;color:orange">−${gbp(totalPrize)}</td></tr>`;
-    }
+            <td><strong>${rev > 0 ? 'Net profit' : 'Total prize cost'}</strong></td>
+            <td colspan="2" style="text-align:right;color:var(--text-dim)">${rev > 0 ? 'RTP ' + rtp : (totalPrize / n).toFixed(1) + 'p/game'}</td>
+            <td style="text-align:right;font-weight:700;color:${rev > 0 ? pc : 'orange'}">${rev > 0 ? (profit < 0 ? '−' : '') + gbp(profit) : '−' + gbp(totalPrize)}</td></tr>`;
 
     function simRow(label, actual, expected) {
       const diff = (parseFloat(actual) - parseFloat(expected)).toFixed(1);
