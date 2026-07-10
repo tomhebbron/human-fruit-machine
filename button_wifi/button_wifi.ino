@@ -7,10 +7,11 @@
  *   - drives six WS2812B zones + button lamps from real game events,
  *     designed so the LIGHTS ALONE communicate the outcome (win /
  *     pair / jackpot / lose) if the iPad display or sound ever fails
- *   - SELF-SYNCS the web app from GitHub Pages: at boot it tries to
- *     join your home WiFi; if it succeeds it downloads index.html and
- *     the sound files listed in sync-manifest.txt into LittleFS, then
- *     switches to AP mode. Deploy = git push + power-cycle at home.
+ *   - SELF-SYNCS the web app from GitHub Pages: at boot it tries your
+ *     home WiFi, then your phone hotspot as a fallback; on success it
+ *     downloads index.html and the sound files listed in
+ *     sync-manifest.txt into LittleFS, then switches to AP mode. Deploy
+ *     = git push + power-cycle in range of either network.
  *
  * ── Fete-day boot (no home WiFi in range) ───────────────────────
  *   Boot → ~10 s trying home WiFi → gives up → AP "FruitMachine"
@@ -90,11 +91,17 @@
 #include <math.h>
 
 // ── Sync config — EDIT THESE ─────────────────────────────────────
+// At boot the ESP32 tries HOME WiFi first, then your PHONE HOTSPOT, to
+// download the web app from GitHub Pages. So you can sync at home tonight
+// AND re-sync on the field tomorrow (turn the hotspot on, power-cycle).
+// Leave a pair on its "YOUR_..." placeholder to skip that network.
 #define SYNC_ENABLED  true
-const char* HOME_SSID = "YOUR_HOME_WIFI";      // <-- your home network
-const char* HOME_PASS = "YOUR_HOME_PASSWORD";
+const char* HOME_SSID  = "YOUR_HOME_WIFI";       // preferred network
+const char* HOME_PASS  = "YOUR_HOME_PASSWORD";
+const char* PHONE_SSID = "YOUR_PHONE_HOTSPOT";   // fallback (use on the field)
+const char* PHONE_PASS = "YOUR_PHONE_PASSWORD";
 const char* SYNC_BASE = "https://tomhebbron.github.io/human-fruit-machine/";
-const unsigned long HOME_JOIN_TIMEOUT_MS = 10000;
+const unsigned long WIFI_JOIN_TIMEOUT_MS = 10000;   // per network
 
 // ── AP config ────────────────────────────────────────────────────
 const char* AP_SSID = "FruitMachine";
@@ -385,19 +392,28 @@ bool fetchToFile(WiFiClientSecure& client, const String& url, const String& path
   return true;
 }
 
-void syncFromPages() {
-  Serial.printf("Sync: joining %s ...\n", HOME_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(HOME_SSID, HOME_PASS);
+// Try to join one network within the timeout. Returns true if connected.
+// Skips a pair still on its "YOUR_..." placeholder.
+bool joinWifi(const char* ssid, const char* pass) {
+  if (!ssid || !strlen(ssid) || strncmp(ssid, "YOUR_", 5) == 0) return false;
+  Serial.printf("Sync: joining %s ...\n", ssid);
+  WiFi.disconnect(true);
+  WiFi.begin(ssid, pass);
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < HOME_JOIN_TIMEOUT_MS) {
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < WIFI_JOIN_TIMEOUT_MS) {
     digitalWrite(LED_PIN, (millis() / 120) % 2);
     fill_solid(leds, TOTAL_LEDS, ((millis() / 200) % 2) ? CRGB(0, 40, 120) : CRGB::Black);
     FastLED.show();
     delay(100);
   }
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Sync: home WiFi not found — serving existing files.");
+  return WiFi.status() == WL_CONNECTED;
+}
+
+void syncFromPages() {
+  WiFi.mode(WIFI_STA);
+  // Home first (preferred), then phone hotspot (field fallback).
+  if (!joinWifi(HOME_SSID, HOME_PASS) && !joinWifi(PHONE_SSID, PHONE_PASS)) {
+    Serial.println("Sync: no known WiFi found — serving existing files.");
     WiFi.disconnect(true);
     return;
   }
@@ -482,7 +498,7 @@ void setup() {
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed!");
 
-  if (SYNC_ENABLED && strcmp(HOME_SSID, "YOUR_HOME_WIFI") != 0) syncFromPages();
+  if (SYNC_ENABLED) syncFromPages();   // joinWifi() skips unconfigured pairs
 
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS);
