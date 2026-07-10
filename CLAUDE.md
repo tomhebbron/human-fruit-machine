@@ -260,6 +260,31 @@ saved by `saveCfg()`). The admin form mirrors these into form fields in
 save handler, and use everywhere via `cfg.X`** — and add a corresponding
 field to the form HTML.
 
+### Fruit & jackpot (configurable per event)
+
+`FRUITS` is the fixed *catalog* of all symbols (8: cherry, lemon, orange,
+apple, banana, strawberry, grapes, star). What's actually **in play** is
+`cfg.fruits` (array of ids) — the operator ticks what they've got as prizes
+that day (admin → Settings → Fruit in play; need ≥3). `activeFruits()`
+returns the enabled subset and `weightedRandom(pool)` draws from it.
+
+The **jackpot is decoupled** from the normal three-of-a-kind:
+
+* `cfg.jackpotFruit` — three of THIS symbol = jackpot (default `star`, but
+  can be any fruit, e.g. three lemons).
+* `cfg.jackpotChance` — its own independent probability (UI: "1 in N spins",
+  default 1/500). So the jackpot rate is exactly `jackpotChance` **regardless**
+  of how common the jackpot fruit is elsewhere.
+* `spinReels()` rolls jackpot first; the natural three-of-a-kind branch then
+  *excludes* the jackpot fruit, so three-jackpot-fruit **never** lands by
+  chance — only on a real jackpot roll. `evaluate()` keys the jackpot off
+  `cfg.jackpotFruit`, not a hardcoded star.
+* The jackpot fruit still whizzes past during the spin (`reelVisualPool()`
+  adds it to the blur even if it isn't a normal in-play fruit).
+
+If you add a hardcoded `'star'` check anywhere you've reintroduced a bug —
+always go through `cfg.jackpotFruit` / `jackpotFruit()`.
+
 ## Easter eggs
 
 Three secret buttons (`Q`/`W`/`E` on keyboard, `⭐`/`🎉`/`👥` in mobile
@@ -274,6 +299,9 @@ bar):
 
 ## History of major changes (most recent first)
 
+* `v2026-07-10.1` — Configurable fruit set (`cfg.fruits`) + configurable
+  jackpot symbol/rate (`cfg.jackpotFruit`, `cfg.jackpotChance`, decoupled
+  from three-of-a-kind). See "Fruit & jackpot" under Settings.
 * `v2026-07-03.3` — Volunteer display mode (`cfg.volunteerMode`, or
   `?volunteer=1` URL override): full-screen black overlay with each
   helper's fruit huge + countdown to their reel's lock time, then the
@@ -289,7 +317,12 @@ bar):
   (audio unlock), bundled-sound 404 → synth fallback, removed the
   pointerdown/click double-fire on the spin button, key auto-repeat
   guard, Transfer Settings JSON copy/paste in admin.
-* `v2026-06-20.21` — Lever retired; button-only input.
+* `v2026-06-20.24` — Fix: leftover `stopRatchet()` call in `startSpin()`
+  crashed every spin after the lever was removed.
+* `v2026-06-20.21` — Lever retired; button-only input. Removed mobile lever
+  drag / ratchet / lever-dots. Mobile bar = egg buttons only.
+* `v2026-06-20.20` — Drum-style reel animation, bonus win sounds, auto-reset
+  after result, ready-button flash + ESP32 `state` message.
 * `v2026-06-20.14` — Credit mode (no-coin toggle for fete wristbands).
   Spin sound = Jägerhaus once-through (provides its own stops);
   removed per-reel ching + lever clunk. Split win sound into pair vs.

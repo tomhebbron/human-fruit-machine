@@ -806,6 +806,20 @@
           </div>
         </div>
         <div class="setting-group">
+          <h4>Fruit in play</h4>
+          <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.5rem">
+            Tick the fruit you've actually got as prizes today. Need at least 3.
+          </p>
+          <div id="fruit-checks" style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;margin-bottom:0.8rem"></div>
+          <div class="setting-row">
+            <label>Jackpot symbol (three of these = jackpot)</label>
+            <select id="s-jackpot-fruit" style="width:12rem;font-size:1rem"></select>
+          </div>
+          <div class="setting-row">
+            <label>Jackpot roughly 1 in <input type="number" id="s-jackpot-onein" min="10" max="100000" step="10" value="500" style="width:6rem"> spins</label>
+          </div>
+        </div>
+        <div class="setting-group">
           <h4>Timing</h4>
           <p style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.5rem">
             Seconds from the start of the spin sound when each reel visually locks and
@@ -855,7 +869,7 @@
             <input type="text" id="s-prize-three" value="A lollipop! 🍭">
           </div>
           <div class="setting-row">
-            <label>Jackpot (⭐ Lucky Star × 3)</label>
+            <label>Jackpot prize (three of the jackpot symbol)</label>
             <input type="text" id="s-prize-jackpot" value="JACKPOT — see the organ grinder! 🏆">
           </div>
         </div>
@@ -983,7 +997,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-03.3';
+const VERSION = '2026-07-10.1';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -999,11 +1013,24 @@ const FRUITS = [
   { id: 'star',       emoji: '⭐', name: 'Lucky Star', weight:  1 },
 ];
 
-function weightedRandom() {
-  const total = FRUITS.reduce((s, f) => s + f.weight, 0);
+// The fruit actually in play, per cfg.fruits. Falls back to defaults if the
+// operator has somehow left fewer than 3 enabled (need 3 distinct for a loss).
+function activeFruits() {
+  const ids  = (cfg && Array.isArray(cfg.fruits)) ? cfg.fruits : DEFAULTS.fruits;
+  const pool = FRUITS.filter(f => ids.includes(f.id));
+  return pool.length >= 3 ? pool : FRUITS.filter(f => DEFAULTS.fruits.includes(f.id));
+}
+
+function jackpotFruit() {
+  return FRUITS.find(f => f.id === (cfg && cfg.jackpotFruit)) || FRUITS.find(f => f.id === 'star') || FRUITS[0];
+}
+
+function weightedRandom(pool) {
+  pool = pool || activeFruits();
+  const total = pool.reduce((s, f) => s + f.weight, 0);
   let r = Math.random() * total;
-  for (const f of FRUITS) { r -= f.weight; if (r <= 0) return f; }
-  return FRUITS[FRUITS.length - 1];
+  for (const f of pool) { r -= f.weight; if (r <= 0) return f; }
+  return pool[pool.length - 1];
 }
 
 function shuffle(a) {
@@ -1015,24 +1042,34 @@ function shuffle(a) {
   return a;
 }
 
-function spinReels(cfg) {
-  if (cfg.forcing) {
-    const star = FRUITS.find(f => f.id === 'star');
-    return [star, star, star];
-  }
+function spinReels(opts) {
+  const pool = activeFruits();
+  const jf   = jackpotFruit();
 
-  const r = Math.random();
+  // Forced jackpot (easter egg) — three of the jackpot fruit.
+  if (opts.forcing) return [jf, jf, jf];
 
-  if (cfg.pitying || r < cfg.threeChance) {
-    const f = weightedRandom();
+  const r  = Math.random();
+  const jc = cfg.jackpotChance ?? 0;
+
+  // Jackpot: three jackpot-fruit. Its own independent roll so the rate is
+  // exactly jackpotChance regardless of how common the fruit is elsewhere.
+  if (r < jc) return [jf, jf, jf];
+
+  // Three of a kind — pick from the pool EXCLUDING the jackpot fruit, so a
+  // natural triple can never accidentally be a jackpot.
+  if (opts.pitying || r < jc + opts.threeChance) {
+    const triplePool = pool.filter(f => f.id !== jf.id);
+    const f = weightedRandom(triplePool.length ? triplePool : pool);
     return [f, f, f];
   }
 
-  if (r < cfg.threeChance + cfg.twoChance) {
-    const f = weightedRandom();
-    let other = weightedRandom();
+  // Pair
+  if (r < jc + opts.threeChance + opts.twoChance) {
+    const f = weightedRandom(pool);
+    let other = weightedRandom(pool);
     let t = 0;
-    while (other.id === f.id && t++ < 20) other = weightedRandom();
+    while (other.id === f.id && t++ < 20) other = weightedRandom(pool);
     return shuffle([f, f, other]);
   }
 
@@ -1041,10 +1078,10 @@ function spinReels(cfg) {
   const res  = [];
   let   t    = 0;
   while (res.length < 3 && t++ < 80) {
-    const f = weightedRandom();
+    const f = weightedRandom(pool);
     if (!used.has(f.id)) { used.add(f.id); res.push(f); }
   }
-  for (const f of FRUITS) {
+  for (const f of pool) {
     if (res.length === 3) break;
     if (!used.has(f.id)) { used.add(f.id); res.push(f); }
   }
@@ -1056,7 +1093,7 @@ function evaluate(reels) {
   for (const r of reels) counts[r.id] = (counts[r.id] || 0) + 1;
   const max   = Math.max(...Object.values(counts));
   const match = reels.find(r => counts[r.id] === max);
-  if (max === 3 && match.id === 'star') return { type: 'jackpot', match };
+  if (max === 3 && match.id === (cfg.jackpotFruit)) return { type: 'jackpot', match };
   if (max === 3) return { type: 'three', match };
   if (max === 2) return { type: 'two',   match };
   return { type: 'none', match: null };
@@ -1068,6 +1105,13 @@ function evaluate(reels) {
 const DEFAULTS = {
   requireCoin:   false,  // false = booth/wristband mode: no coin step, just press the button
   volunteerMode: false,  // true = booth iPad: full-screen fruits + countdowns for helpers
+  // Which fruit are in play (ids from the FRUITS catalog). Set to what you've
+  // actually got as prizes on the day. Need at least 3 for a sensible game.
+  fruits:       ['cherry', 'lemon', 'orange', 'apple', 'banana', 'strawberry'],
+  // Jackpot = three of THIS fruit. Independent of the normal three-of-a-kind,
+  // so three-jackpot-fruit only ever lands on a jackpot roll (never by chance).
+  jackpotFruit: 'star',
+  jackpotChance: 0.002, // ~1 in 500 spins
   threeChance:  0.05,
   twoChance:    0.20,
   pityCutoff:   8,
@@ -1087,12 +1131,18 @@ const DEFAULTS = {
 };
 
 function loadCfg() {
+  const fresh = () => ({ ...DEFAULTS, fruits: [...DEFAULTS.fruits], prizes: { ...DEFAULTS.prizes }, prizePence: { ...DEFAULTS.prizePence } });
   try {
     const raw = localStorage.getItem('hfm_cfg');
-    if (!raw) return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes }, prizePence: { ...DEFAULTS.prizePence } };
+    if (!raw) return fresh();
     const s = JSON.parse(raw);
-    return { ...DEFAULTS, ...s, prizes: { ...DEFAULTS.prizes, ...(s.prizes || {}) }, prizePence: { ...DEFAULTS.prizePence, ...(s.prizePence || {}) } };
-  } catch { return { ...DEFAULTS, prizes: { ...DEFAULTS.prizes }, prizePence: { ...DEFAULTS.prizePence } }; }
+    return {
+      ...DEFAULTS, ...s,
+      fruits: Array.isArray(s.fruits) && s.fruits.length ? [...s.fruits] : [...DEFAULTS.fruits],
+      prizes: { ...DEFAULTS.prizes, ...(s.prizes || {}) },
+      prizePence: { ...DEFAULTS.prizePence, ...(s.prizePence || {}) },
+    };
+  } catch { return fresh(); }
 }
 
 function saveCfg(c) { localStorage.setItem('hfm_cfg', JSON.stringify(c)); }
@@ -1749,10 +1799,20 @@ function cancelAutoReset() {
 // ── Reel animation ──
 const reelTimers = [null, null, null];
 
+// What flashes past during a spin: the in-play fruit plus the jackpot symbol
+// (so the jackpot fruit tantalisingly whizzes by even if it isn't a normal fruit).
+function reelVisualPool() {
+  const pool = activeFruits().slice();
+  const jf   = jackpotFruit();
+  if (!pool.some(f => f.id === jf.id)) pool.push(jf);
+  return pool;
+}
+
 function startReelAnim(i) {
   document.getElementById('reel-' + i).className = 'reel spinning';
   document.getElementById('name-' + i).textContent = '';
-  const pick = () => FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
+  const vp = reelVisualPool();
+  const pick = () => vp[Math.floor(Math.random() * vp.length)].emoji;
   reelTimers[i] = setInterval(() => {
     document.getElementById('emoji-' + i).textContent = pick();
     document.getElementById('above-' + i).textContent = pick();
@@ -1762,7 +1822,8 @@ function startReelAnim(i) {
 
 function lockReel(i, fruit) {
   clearInterval(reelTimers[i]);
-  const pick = () => FRUITS[Math.floor(Math.random() * FRUITS.length)].emoji;
+  const vp = reelVisualPool();
+  const pick = () => vp[Math.floor(Math.random() * vp.length)].emoji;
   document.getElementById('emoji-' + i).textContent = fruit.emoji;
   document.getElementById('above-' + i).textContent = pick();
   document.getElementById('below-' + i).textContent = pick();
@@ -1771,11 +1832,12 @@ function lockReel(i, fruit) {
 }
 
 function resetReels() {
+  const pool = activeFruits();
   [0,1,2].forEach(i => {
     clearInterval(reelTimers[i]);
     document.getElementById('reel-'  + i).className   = 'reel';
     document.getElementById('name-'  + i).textContent = '';
-    document.getElementById('emoji-' + i).textContent = FRUITS[i].emoji;
+    document.getElementById('emoji-' + i).textContent = (pool[i] || pool[0]).emoji;
   });
 }
 
@@ -1786,9 +1848,10 @@ function showBanner(result) {
   document.getElementById('prize-award').textContent = '';
 
   if (result.type === 'jackpot') {
+    const jf = result.match || jackpotFruit();
     banner.classList.add('jackpot');
-    document.getElementById('prize-headline').textContent = '⭐ JACKPOT! ⭐';
-    document.getElementById('prize-detail').textContent   = 'Lucky Star × 3!';
+    document.getElementById('prize-headline').textContent = jf.emoji + ' JACKPOT! ' + jf.emoji;
+    document.getElementById('prize-detail').textContent   = jf.name + ' × 3!';
     document.getElementById('prize-award').textContent    = '🏆 ' + cfg.prizes.jackpot;
   } else if (result.type === 'three') {
     banner.classList.add('win');
@@ -1813,8 +1876,9 @@ function hideBanner() {
 }
 
 function updatePrizeBoard() {
+  const jf = jackpotFruit();
   document.getElementById('prize-board').innerHTML = [
-    `<span class="pb-entry pb-jackpot">⭐×3 → ${cfg.prizes.jackpot}</span>`,
+    `<span class="pb-entry pb-jackpot">${jf.emoji}×3 → ${cfg.prizes.jackpot}</span>`,
     `<span class="pb-entry pb-three">3-of-a-kind → ${cfg.prizes.three}</span>`,
     `<span class="pb-entry pb-two">Pair → ${cfg.prizes.two}</span>`,
   ].join('');
@@ -2288,6 +2352,25 @@ function buildLog() {
 function syncSettingsUI() {
   document.getElementById('s-coin').checked = !!cfg.requireCoin;
   document.getElementById('s-volmode').checked = !!cfg.volunteerMode;
+
+  // Fruit-in-play checkboxes (built from the FRUITS catalog)
+  const fc = document.getElementById('fruit-checks');
+  const enabled = Array.isArray(cfg.fruits) ? cfg.fruits : DEFAULTS.fruits;
+  fc.innerHTML = FRUITS.map(f => `
+    <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;font-size:0.95rem">
+      <input type="checkbox" class="fruit-check" value="${f.id}" ${enabled.includes(f.id) ? 'checked' : ''}
+             style="width:1.1rem;height:1.1rem">
+      <span>${f.emoji} ${f.name}</span>
+    </label>`).join('');
+
+  // Jackpot symbol dropdown
+  const sel = document.getElementById('s-jackpot-fruit');
+  sel.innerHTML = FRUITS.map(f =>
+    `<option value="${f.id}" ${cfg.jackpotFruit === f.id ? 'selected' : ''}>${f.emoji} ${f.name}</option>`).join('');
+
+  const jc = cfg.jackpotChance || DEFAULTS.jackpotChance;
+  document.getElementById('s-jackpot-onein').value = Math.round(1 / jc);
+
   document.getElementById('s-three').value = Math.round(cfg.threeChance * 100);
   document.getElementById('s-two').value   = Math.round(cfg.twoChance   * 100);
   document.getElementById('s-pity').value  = cfg.pityCutoff;
@@ -2428,9 +2511,18 @@ document.querySelectorAll('.tab').forEach(btn => {
 });
 
 document.getElementById('save-settings').addEventListener('click', () => {
+  const chosenFruits = [...document.querySelectorAll('.fruit-check:checked')].map(c => c.value);
+  if (chosenFruits.length < 3) {
+    alert('Pick at least 3 fruit to play with.');
+    return;
+  }
+  const oneIn = parseInt(document.getElementById('s-jackpot-onein').value) || 500;
   cfg = {
     requireCoin:   document.getElementById('s-coin').checked,
     volunteerMode: document.getElementById('s-volmode').checked,
+    fruits:        chosenFruits,
+    jackpotFruit:  document.getElementById('s-jackpot-fruit').value,
+    jackpotChance: 1 / Math.max(10, oneIn),
     threeChance:  parseInt(document.getElementById('s-three').value) / 100,
     twoChance:    parseInt(document.getElementById('s-two').value)   / 100,
     pityCutoff:   parseInt(document.getElementById('s-pity').value),
@@ -2657,7 +2749,7 @@ function doSim(n) {
 
     const expThree = (cfg.threeChance * 100).toFixed(1);
     const expTwo   = (cfg.twoChance   * 100).toFixed(1);
-    const expWin   = ((cfg.threeChance + cfg.twoChance) * 100).toFixed(1);
+    const expWin   = (((cfg.jackpotChance || 0) + cfg.threeChance + cfg.twoChance) * 100).toFixed(1);
     const expNone  = (100 - parseFloat(expWin)).toFixed(1);
 
     // Financial
@@ -2686,7 +2778,7 @@ function doSim(n) {
             <td style="text-align:right">${threes}</td>
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.three ?? 50)}</td>
             <td style="text-align:right;color:orange">−${gbp(threeCost)}</td></tr>
-        <tr><td>⭐ Jackpot prizes</td>
+        <tr><td>${jackpotFruit().emoji} Jackpot prizes</td>
             <td style="text-align:right">${jacks}</td>
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
             <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
@@ -2705,7 +2797,7 @@ function doSim(n) {
             <td style="text-align:right">${threes}</td>
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.three ?? 50)}</td>
             <td style="text-align:right;color:orange">−${gbp(threeCost)}</td></tr>
-        <tr><td>⭐ Jackpot prizes</td>
+        <tr><td>${jackpotFruit().emoji} Jackpot prizes</td>
             <td style="text-align:right">${jacks}</td>
             <td style="text-align:right;color:var(--text-dim)">${gbp(pp.jackpot ?? 200)}</td>
             <td style="text-align:right;color:orange">−${gbp(jackpotCost)}</td></tr>
@@ -2734,7 +2826,7 @@ function doSim(n) {
           <th style="text-align:right">Expected</th><th style="text-align:right">Δ</th>
         </tr></thead>
         <tbody>
-          ${simRow('⭐ Jackpot (3× star)', pct(jacks), '~' + (cfg.threeChance * (1/100) * 100).toFixed(2) + '%')}
+          ${simRow(jackpotFruit().emoji + ' Jackpot (3× ' + jackpotFruit().name + ')', pct(jacks), ((cfg.jackpotChance || 0) * 100).toFixed(2) + '%')}
           ${simRow('🎰 Three-of-a-kind', pct(threes), expThree + '%')}
           ${simRow('🎉 Pair', pct(twos), expTwo + '%')}
           ${simRow('✅ Any win', pct(wins), expWin + '%')}
