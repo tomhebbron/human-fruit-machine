@@ -628,7 +628,13 @@ void setup() {
   bootSelfTest();
 
   gFsMounted = LittleFS.begin(true);
-  if (!gFsMounted) Serial.println("LittleFS mount failed! (check partition scheme)");
+  if (!gFsMounted) {                        // corrupted FS (e.g. brownout mid-write) — wipe it
+    Serial.println("LittleFS mount failed — formatting to recover...");
+    LittleFS.format();
+    gFsMounted = LittleFS.begin(true);
+    Serial.println(gFsMounted ? "LittleFS reformatted & mounted clean."
+                              : "LittleFS still failing (check partition scheme / power).");
+  }
 
   loadWifiCreds();
   if (SYNC_ENABLED) syncFromPages();   // uses NVS creds; skips if none set
