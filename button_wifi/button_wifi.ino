@@ -76,8 +76,9 @@
  *   Partition scheme: default 4 MB with ~1.5 MB LittleFS is enough —
  *   the synced payload (index.html + 8 wired MP3s) is ~0.9 MB.
  *   No filesystem-upload plugin needed: the sketch downloads its own
- *   files. First flash on a blank board: flash, power it near your
- *   home WiFi once, watch Serial for "Sync ok".
+ *   files. First run: flash, join the "FruitMachine" AP, open
+ *   http://192.168.4.1/wifi and enter your WiFi — it saves to NVS,
+ *   reboots and syncs. No WiFi passwords live in this file.
  *
  * ── WebSocket protocol ───────────────────────────────────────────
  *   ESP32 → page:  {"t":"button"}  {"t":"egg","n":0|2}
@@ -94,18 +95,16 @@
 #include <LittleFS.h>
 #include <FastLED.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <math.h>
 
-// ── Sync config — EDIT THESE ─────────────────────────────────────
-// At boot the ESP32 tries HOME WiFi first, then your PHONE HOTSPOT, to
-// download the web app from GitHub Pages. So you can sync at home tonight
-// AND re-sync on the field tomorrow (turn the hotspot on, power-cycle).
-// Leave a pair on its "YOUR_..." placeholder to skip that network.
+// ── Sync config ───────────────────────────────────────────────────
+// NO WiFi passwords in this file. The booth WiFi is entered on a web page
+// (http://192.168.4.1/wifi) and stored in the ESP32's NVS flash — set once,
+// survives reboots, never in the repo. At boot it tries the saved HOME
+// network first, then the saved PHONE hotspot, to download the web app from
+// GitHub Pages. The AP always starts, so /wifi is reachable before any sync.
 #define SYNC_ENABLED  true
-const char* HOME_SSID  = "YOUR_HOME_WIFI";       // preferred network
-const char* HOME_PASS  = "YOUR_HOME_PASSWORD";
-const char* PHONE_SSID = "YOUR_PHONE_HOTSPOT";   // fallback (use on the field)
-const char* PHONE_PASS = "YOUR_PHONE_PASSWORD";
 const char* SYNC_BASE = "https://tomhebbron.github.io/human-fruit-machine/";
 const unsigned long WIFI_JOIN_TIMEOUT_MS = 10000;   // per network
 
@@ -408,6 +407,43 @@ String gSyncResult = "sync not run yet";
 String gLastScan   = "not scanned yet";
 bool   gFsMounted  = false;
 
+// ── WiFi credentials in NVS (set via http://192.168.4.1/wifi) ────
+Preferences   prefs;
+String        gHomeSsid, gHomePass, gPhoneSsid, gPhonePass;
+unsigned long gRebootAt = 0;   // >0 = reboot scheduled (after saving WiFi)
+
+void loadWifiCreds() {
+  prefs.begin("hfm", true);
+  gHomeSsid  = prefs.getString("home_ssid",  "");
+  gHomePass  = prefs.getString("home_pass",  "");
+  gPhoneSsid = prefs.getString("phone_ssid", "");
+  gPhonePass = prefs.getString("phone_pass", "");
+  prefs.end();
+}
+
+void saveWifiCreds(const String& hs, const String& hp, const String& ps, const String& pp) {
+  prefs.begin("hfm", false);
+  prefs.putString("home_ssid",  hs);
+  prefs.putString("home_pass",  hp);
+  prefs.putString("phone_ssid", ps);
+  prefs.putString("phone_pass", pp);
+  prefs.end();
+}
+
+// Minimal escaping for echoing an SSID back into an HTML attribute.
+String htmlEscape(const String& in) {
+  String o;
+  for (size_t i = 0; i < in.length(); i++) {
+    char c = in[i];
+    if      (c == '&') o += "&amp;";
+    else if (c == '<') o += "&lt;";
+    else if (c == '>') o += "&gt;";
+    else if (c == '"') o += "&quot;";
+    else o += c;
+  }
+  return o;
+}
+
 // List every WiFi network the ESP32 can see. It only does 2.4 GHz, so
 // anything on a 5 GHz channel (>14) is flagged as un-joinable.
 void scanWifi() {
@@ -446,12 +482,17 @@ bool joinWifi(const char* ssid, const char* pass) {
 }
 
 void syncFromPages() {
+  if (!gHomeSsid.length() && !gPhoneSsid.length()) {
+    gSyncResult = "No WiFi set yet. Open http://192.168.4.1/wifi to enter it.";
+    Serial.println("Sync: no WiFi configured — set it at /wifi.");
+    return;
+  }
   WiFi.mode(WIFI_STA);
   // Home first (preferred), then phone hotspot (field fallback).
-  if (!joinWifi(HOME_SSID, HOME_PASS) && !joinWifi(PHONE_SSID, PHONE_PASS)) {
+  if (!joinWifi(gHomeSsid.c_str(), gHomePass.c_str()) && !joinWifi(gPhoneSsid.c_str(), gPhonePass.c_str())) {
     scanWifi();   // couldn't join — record what IS visible, for /status
-    gSyncResult = "NOT connected. Tried HOME='" + String(HOME_SSID) +
-                  "', then PHONE='" + String(PHONE_SSID) +
+    gSyncResult = "NOT connected. Tried HOME='" + gHomeSsid +
+                  "', then PHONE='" + gPhoneSsid +
                   "'. Check spelling/password and that it's 2.4GHz. "
                   "See the visible-networks list below.";
     Serial.println("Sync: no known WiFi found — serving existing files.");
@@ -507,13 +548,37 @@ String buildStatus() {
   else
     s += "Storage: LittleFS NOT MOUNTED (partition scheme has no filesystem - "
          "pick 'No OTA (2MB APP/2MB SPIFFS)').\n";
-  s += "\nConfigured WiFi (edit these in the sketch):\n";
-  s += "  HOME : " + String(HOME_SSID) + "\n";
-  s += "  PHONE: " + String(PHONE_SSID) + "\n\n";
+  s += "\nWiFi for sync (set at /wifi, stored in NVS):\n";
+  s += "  HOME : " + (gHomeSsid.length()  ? gHomeSsid  : String("(not set)")) + "\n";
+  s += "  PHONE: " + (gPhoneSsid.length() ? gPhoneSsid : String("(not set)")) + "\n\n";
   s += "Last sync: " + gSyncResult + "\n\n";
   s += "Networks seen at boot (2.4GHz only are joinable):\n" + gLastScan + "\n";
-  s += "To re-sync: get one of the above on 2.4GHz, then power-cycle.\n";
+  s += "Set/change WiFi: http://192.168.4.1/wifi  (then it reboots and re-syncs)\n";
   return s;
+}
+
+// The WiFi setup form served at http://192.168.4.1/wifi
+String buildWifiForm() {
+  return String("<!doctype html><html><head><meta name=viewport "
+    "content='width=device-width,initial-scale=1'><title>Booth WiFi</title><style>"
+    "body{font-family:system-ui,sans-serif;max-width:26rem;margin:1.5rem auto;padding:0 1rem;background:#111;color:#eee}"
+    "label{font-weight:600;display:block;margin-top:0.8rem}"
+    "input{width:100%;padding:0.55rem;margin-top:0.25rem;font-size:1rem;border-radius:0.4rem;"
+    "border:1px solid #555;background:#222;color:#eee;box-sizing:border-box}"
+    "button{margin-top:1.2rem;padding:0.7rem 1.4rem;font-size:1rem;border:0;border-radius:0.5rem;"
+    "background:#00c853;color:#012;font-weight:700}a{color:#7cf}</style></head><body>"
+    "<h2>Booth WiFi (for game sync)</h2>"
+    "<p>The booth downloads the game from GitHub Pages over one of these. Home is tried "
+    "first, then the phone hotspot. <b>2.4GHz only.</b> Stored on the ESP32, never in code.</p>"
+    "<form method='POST' action='/wifi'>"
+    "<label>Home WiFi name</label><input name='home_ssid' value='" + htmlEscape(gHomeSsid) + "'>"
+    "<label>Home WiFi password</label><input name='home_pass' type='password' placeholder='"
+      + (gHomePass.length() ? "(leave blank to keep)" : "") + "'>"
+    "<label>Phone hotspot name</label><input name='phone_ssid' value='" + htmlEscape(gPhoneSsid) + "'>"
+    "<label>Phone hotspot password</label><input name='phone_pass' type='password' placeholder='"
+      + (gPhonePass.length() ? "(leave blank to keep)" : "") + "'>"
+    "<button type='submit'>Save &amp; reboot to sync</button></form>"
+    "<p><a href='/status'>View status</a></p></body></html>");
 }
 
 // ── Power-on self-test ────────────────────────────────────────────
@@ -565,7 +630,8 @@ void setup() {
   gFsMounted = LittleFS.begin(true);
   if (!gFsMounted) Serial.println("LittleFS mount failed! (check partition scheme)");
 
-  if (SYNC_ENABLED) syncFromPages();   // joinWifi() skips unconfigured pairs
+  loadWifiCreds();
+  if (SYNC_ENABLED) syncFromPages();   // uses NVS creds; skips if none set
 
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS);
@@ -577,11 +643,35 @@ void setup() {
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req) {
     req->send(200, "text/plain", buildStatus());
   });
+  // WiFi setup — enter the sync network(s); saved to NVS; reboots to re-sync.
+  server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send(200, "text/html", buildWifiForm());
+  });
+  server.on("/wifi", HTTP_POST, [](AsyncWebServerRequest* req) {
+    auto val = [&](const char* n) -> String {
+      return req->hasParam(n, true) ? req->getParam(n, true)->value() : String("");
+    };
+    String hs = val("home_ssid"),  ps = val("phone_ssid");
+    String hp = val("home_pass"),  pp = val("phone_pass");
+    if (!hp.length()) hp = gHomePass;    // blank password = keep the current one
+    if (!pp.length()) pp = gPhonePass;
+    saveWifiCreds(hs, hp, ps, pp);
+    loadWifiCreds();
+    req->send(200, "text/html",
+      "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
+      "<body style='font-family:system-ui,sans-serif;max-width:26rem;margin:2rem auto;"
+      "padding:0 1rem;background:#111;color:#eee'><h2>Saved \xE2\x9C\x85</h2><p>Rebooting to "
+      "sync from <b>" + htmlEscape(hs.length() ? hs : ps) + "</b>. Reconnect to the "
+      "<b>FruitMachine</b> WiFi in ~20 seconds, then reload the game.</p></body>");
+    gRebootAt = millis() + 1500;         // let the response flush, then restart
+  });
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
   server.onNotFound([](AsyncWebServerRequest* req) {
     if (req->url() == "/" || req->url() == "/index.html")
       req->send(200, "text/plain",
-        "No index.html on this ESP32 yet.\n\n" + buildStatus());
+        "No index.html on this ESP32 yet.\n"
+        "Set the booth WiFi at http://192.168.4.1/wifi so it can download the game.\n\n"
+        + buildStatus());
     else
       req->send(404, "text/plain", "Not found");
   });
@@ -592,8 +682,20 @@ void setup() {
 
 // ── Loop ──────────────────────────────────────────────────────────
 void loop() {
+  if (gRebootAt && (long)(millis() - gRebootAt) >= 0) {
+    Serial.println("Rebooting to apply new WiFi...");
+    delay(50);
+    ESP.restart();
+  }
+
   ws.cleanupClients();
   updateLights();
+
+  // Onboard blue LED (GPIO 2): double-blip heartbeat = "alive and serving".
+  // Stops if the loop ever hangs, so it doubles as a liveness tell.
+  // (The red onboard LED is a hardwired power indicator — not controllable.)
+  { unsigned long p = millis() % 2000;
+    digitalWrite(LED_PIN, (p < 45 || (p >= 130 && p < 175)) ? HIGH : LOW); }
 
   unsigned long now = millis();
 
