@@ -1030,7 +1030,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-10.4';
+const VERSION = '2026-07-10.5';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1465,8 +1465,10 @@ const _BUNDLED_FILES = {
   pairWin:   'sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3',
   tripleWin: 'sounds/floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3',
   jackpot:   'sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3',
-  egg1:      'sounds/mlg-airhorn.mp3',                    // secret ⭐ button
-  egg2:      'sounds/muttley-wheeze-or-laugh.mp3',        // secret 👥 button (upload to enable)
+  egg1:      'sounds/ennismore-goofy-ahh-car-horn-200870.mp3',   // 🔵 blue  — car horn
+  egg2:      'sounds/muttley-wheeze-or-laugh.mp3',               // ⚪ white — Muttley
+  egg3:      'sounds/u_wb4wgxdwxo-boing2-418548.mp3',            // 🟢 green — boing
+  egg4:      'sounds/alex_jauk-funny-fart-216687.mp3',           // 🟡 yellow — fart
 };
 
 // Play a bundled file via its dedicated element so a 404 (e.g. the page is
@@ -1856,13 +1858,15 @@ function eggCrowd() {
 }
 
 function eggBoing() {
-  if (playCustom('egg3', cfg.volume)) return;
-  playBoing(cfg.volume);
+  if (playCustom('egg3', cfg.volume)) return;        // custom override via SFX tab
+  if (!playBundledEl('egg3', cfg.volume))            // bundled boing
+    playBoing(cfg.volume);                            // synth fallback
 }
 
 function eggFart() {
-  if (playCustom('egg4', cfg.volume)) return;
-  playFart(cfg.volume);
+  if (playCustom('egg4', cfg.volume)) return;        // custom override via SFX tab
+  if (!playBundledEl('egg4', cfg.volume))            // bundled fart
+    playFart(cfg.volume);                             // synth fallback
 }
 
 // One dispatch table for every egg trigger (WebSocket, keyboard, on-screen
@@ -2365,7 +2369,7 @@ function _startAudio() {
   const la = getLoseAudio();
   const se = getSpinEl();
   if (!se.src) se.src = _BUNDLED_FILES.spin || makeWavUrl(0, 0.05);
-  const els = ['coin', 'pairWin', 'tripleWin', 'jackpot', 'egg1', 'egg2'].map(bundledEl);
+  const els = ['coin', 'pairWin', 'tripleWin', 'jackpot', 'egg1', 'egg2', 'egg3', 'egg4'].map(bundledEl);
   [la, se, ...els].filter(Boolean).forEach(el => {
     try {
       el.muted = true;

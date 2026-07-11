@@ -7,6 +7,8 @@ sounds/slot-machine-spin.mp3
 sounds/floraphonic-playful-casino-slot-machine-bonus-1-183918.mp3
 sounds/floraphonic-playful-casino-slot-machine-bonus-2-183919.mp3
 sounds/floraphonic-playful-casino-slot-machine-jackpot-3-183921.mp3
-sounds/mlg-airhorn.mp3
+sounds/ennismore-goofy-ahh-car-horn-200870.mp3
 sounds/muttley-wheeze-or-laugh.mp3
+sounds/u_wb4wgxdwxo-boing2-418548.mp3
+sounds/alex_jauk-funny-fart-216687.mp3
 sounds/lose.mp3
