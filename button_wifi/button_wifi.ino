@@ -392,6 +392,31 @@ bool fetchToFile(WiFiClientSecure& client, const String& url, const String& path
   return true;
 }
 
+// ── Diagnostics (Serial + http://192.168.4.1/status) ─────────────
+String gSyncResult = "sync not run yet";
+String gLastScan   = "not scanned yet";
+bool   gFsMounted  = false;
+
+// List every WiFi network the ESP32 can see. It only does 2.4 GHz, so
+// anything on a 5 GHz channel (>14) is flagged as un-joinable.
+void scanWifi() {
+  Serial.println("Scanning for WiFi...");
+  int n = WiFi.scanNetworks();
+  String s;
+  if (n <= 0) {
+    s = "(no networks visible)\n";
+  } else {
+    for (int i = 0; i < n && i < 24; i++) {
+      int ch = WiFi.channel(i);
+      s += WiFi.SSID(i) + "  " + String(WiFi.RSSI(i)) + "dBm  ch" + String(ch)
+         + (ch > 14 ? "  <5GHz - ESP32 CANNOT JOIN>" : "  (2.4GHz OK)") + "\n";
+    }
+  }
+  gLastScan = s;
+  Serial.println("Visible networks:\n" + s);
+  WiFi.scanDelete();
+}
+
 // Try to join one network within the timeout. Returns true if connected.
 // Skips a pair still on its "YOUR_..." placeholder.
 bool joinWifi(const char* ssid, const char* pass) {
@@ -413,11 +438,17 @@ void syncFromPages() {
   WiFi.mode(WIFI_STA);
   // Home first (preferred), then phone hotspot (field fallback).
   if (!joinWifi(HOME_SSID, HOME_PASS) && !joinWifi(PHONE_SSID, PHONE_PASS)) {
+    scanWifi();   // couldn't join — record what IS visible, for /status
+    gSyncResult = "NOT connected. Tried HOME='" + String(HOME_SSID) +
+                  "', then PHONE='" + String(PHONE_SSID) +
+                  "'. Check spelling/password and that it's 2.4GHz. "
+                  "See the visible-networks list below.";
     Serial.println("Sync: no known WiFi found — serving existing files.");
     WiFi.disconnect(true);
     return;
   }
-  Serial.printf("Sync: connected, IP %s\n", WiFi.localIP().toString().c_str());
+  String joined = WiFi.SSID();
+  Serial.printf("Sync: connected to %s, IP %s\n", joined.c_str(), WiFi.localIP().toString().c_str());
 
   WiFiClientSecure client;
   client.setInsecure();   // public static assets; integrity risk accepted
@@ -431,6 +462,7 @@ void syncFromPages() {
   http.end();
 
   if (!manifest.length()) {
+    gSyncResult = "Connected to '" + joined + "' but couldn't fetch the manifest from GitHub Pages.";
     Serial.println("Sync: no manifest — serving existing files.");
     WiFi.disconnect(true);
     return;
@@ -446,8 +478,31 @@ void syncFromPages() {
     if (!line.length() || line.startsWith("#")) continue;
     if (fetchToFile(client, String(SYNC_BASE) + line, "/" + line)) ok++; else fail++;
   }
+  gSyncResult = "Synced from '" + joined + "': " + String(ok) + " ok, " + String(fail) + " failed."
+              + (fail ? "  (files failing usually means LittleFS didn't mount — check partition scheme.)" : "");
   Serial.printf("Sync %s: %d ok, %d failed\n", fail ? "PARTIAL" : "ok", ok, fail);
   WiFi.disconnect(true);
+}
+
+// Human-readable status, shown at http://192.168.4.1/status (works from a
+// phone on the field — no laptop/Serial needed).
+String buildStatus() {
+  String s = "Human Fruit Machine - ESP32 status\n";
+  s += "==================================\n\n";
+  s += "Game loaded (index.html): " + String((gFsMounted && LittleFS.exists("/index.html")) ? "YES" : "NO") + "\n";
+  if (gFsMounted)
+    s += "Storage free: " + String((LittleFS.totalBytes() - LittleFS.usedBytes()) / 1024) +
+         " KB of " + String(LittleFS.totalBytes() / 1024) + " KB\n";
+  else
+    s += "Storage: LittleFS NOT MOUNTED (partition scheme has no filesystem - "
+         "pick 'No OTA (2MB APP/2MB SPIFFS)').\n";
+  s += "\nConfigured WiFi (edit these in the sketch):\n";
+  s += "  HOME : " + String(HOME_SSID) + "\n";
+  s += "  PHONE: " + String(PHONE_SSID) + "\n\n";
+  s += "Last sync: " + gSyncResult + "\n\n";
+  s += "Networks seen at boot (2.4GHz only are joinable):\n" + gLastScan + "\n";
+  s += "To re-sync: get one of the above on 2.4GHz, then power-cycle.\n";
+  return s;
 }
 
 // ── Power-on self-test ────────────────────────────────────────────
@@ -496,7 +551,8 @@ void setup() {
   FastLED.clear(true);
   bootSelfTest();
 
-  if (!LittleFS.begin(true)) Serial.println("LittleFS mount failed!");
+  gFsMounted = LittleFS.begin(true);
+  if (!gFsMounted) Serial.println("LittleFS mount failed! (check partition scheme)");
 
   if (SYNC_ENABLED) syncFromPages();   // joinWifi() skips unconfigured pairs
 
@@ -506,13 +562,15 @@ void setup() {
 
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
+  // Diagnostics page — always available, even once the game is loaded.
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send(200, "text/plain", buildStatus());
+  });
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
   server.onNotFound([](AsyncWebServerRequest* req) {
     if (req->url() == "/" || req->url() == "/index.html")
       req->send(200, "text/plain",
-        "No index.html on this ESP32 yet.\n"
-        "Set HOME_SSID/HOME_PASS in button_wifi.ino and power-cycle it "
-        "in range of that network to sync from GitHub Pages.");
+        "No index.html on this ESP32 yet.\n\n" + buildStatus());
     else
       req->send(404, "text/plain", "Not found");
   });
