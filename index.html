@@ -54,19 +54,26 @@
       letter-spacing: 0.04em;
     }
 
+    /* Fixed to the top-right of the viewport (safe-area aware) so it can
+       never be pushed off-screen by layout/overflow. Deliberately subtle
+       but always findable; sits below the volunteer overlay (z 150). */
     #admin-btn {
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.12);
-      color: rgba(255,255,255,0.25);
+      position: fixed;
+      top: max(0.5rem, env(safe-area-inset-top));
+      right: max(0.5rem, env(safe-area-inset-right));
+      z-index: 120;
+      background: rgba(0,0,0,0.35);
+      -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.35);
+      color: rgba(255,255,255,0.55);
       border-radius: 50%;
-      width: 2.4rem;
-      height: 2.4rem;
+      width: 2.75rem;
+      height: 2.75rem;
       cursor: pointer;
-      font-size: 1rem;
-      transition: all 0.2s;
-      flex-shrink: 0;
+      font-size: 1.15rem;
+      transition: color 0.2s, border-color 0.2s;
     }
-    #admin-btn:hover { color: white; border-color: rgba(255,255,255,0.45); }
+    #admin-btn:hover, #admin-btn:active { color: white; border-color: rgba(255,255,255,0.6); }
 
     /* ── Reels ── */
     #reels-wrap {
@@ -992,10 +999,10 @@
   <!-- ═══ MOBILE BAR — gamemaster easter-egg buttons only ═══ -->
   <div id="mobile-bar">
     <div id="mob-eggs">
-      <button class="mob-egg-btn c-blue"   data-egg="0" aria-label="Blue button"></button>
-      <button class="mob-egg-btn c-white"  data-egg="2" aria-label="White button"></button>
-      <button class="mob-egg-btn c-green"  data-egg="0" aria-label="Green button"></button>
-      <button class="mob-egg-btn c-yellow" data-egg="2" aria-label="Yellow button"></button>
+      <button class="mob-egg-btn c-blue"   data-egg="0" aria-label="Blue button (party horn)"></button>
+      <button class="mob-egg-btn c-white"  data-egg="2" aria-label="White button (crowd ooh)"></button>
+      <button class="mob-egg-btn c-green"  data-egg="3" aria-label="Green button (boing)"></button>
+      <button class="mob-egg-btn c-yellow" data-egg="4" aria-label="Yellow button (raspberry)"></button>
     </div>
   </div>
 
@@ -1023,7 +1030,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-10.3';
+const VERSION = '2026-07-10.4';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1784,6 +1791,45 @@ function playCrowdOoh(vol) {
   });
 }
 
+// 🪀 Boing — springy descending wobble (synth).
+function playBoing(vol) {
+  playBaked('boing', 0.5, vol, (ac, dest) => {
+    const g = ac.createGain(); g.gain.value = 0.42; g.connect(dest);
+    const osc = ac.createOscillator(), gain = ac.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(720, 0);
+    osc.frequency.exponentialRampToValueAtTime(130, 0.34);
+    const lfo = ac.createOscillator(), lfoGain = ac.createGain();
+    lfo.frequency.value = 18; lfoGain.gain.value = 42;   // vibrato = the "sproing"
+    lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+    osc.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0.7, 0);
+    gain.gain.exponentialRampToValueAtTime(0.001, 0.46);
+    osc.start(0); osc.stop(0.46); lfo.start(0); lfo.stop(0.46);
+  });
+}
+
+// 💨 Raspberry — low buzzy sawtooth with a square-wave tremolo (synth).
+function playFart(vol) {
+  playBaked('fart', 0.55, vol, (ac, dest) => {
+    const g = ac.createGain(); g.gain.value = 0.42; g.connect(dest);
+    const osc = ac.createOscillator(), gain = ac.createGain(), trem = ac.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(135, 0);
+    osc.frequency.linearRampToValueAtTime(82, 0.42);
+    const lfo = ac.createOscillator(), lfoGain = ac.createGain();
+    lfo.type = 'square'; lfo.frequency.value = 26; lfoGain.gain.value = 0.4;  // buzz
+    trem.gain.value = 0.55;
+    lfo.connect(lfoGain); lfoGain.connect(trem.gain);
+    osc.connect(trem); trem.connect(gain); gain.connect(g);
+    gain.gain.setValueAtTime(0, 0);
+    gain.gain.linearRampToValueAtTime(0.75, 0.03);
+    gain.gain.setValueAtTime(0.75, 0.36);
+    gain.gain.exponentialRampToValueAtTime(0.001, 0.5);
+    osc.start(0); osc.stop(0.5); lfo.start(0); lfo.stop(0.5);
+  });
+}
+
 // Easter egg handlers
 function eggParty() {
   if (playCustom('egg1', cfg.volume)) return;       // custom override via SFX tab
@@ -1807,6 +1853,23 @@ function eggCrowd() {
   if (playCustom('egg2', cfg.volume)) return;        // custom override via SFX tab
   if (!playBundledEl('egg2', cfg.volume))            // bundled Muttley (if uploaded)
     playCrowdOoh(cfg.volume);                         // synth fallback
+}
+
+function eggBoing() {
+  if (playCustom('egg3', cfg.volume)) return;
+  playBoing(cfg.volume);
+}
+
+function eggFart() {
+  if (playCustom('egg4', cfg.volume)) return;
+  playFart(cfg.volume);
+}
+
+// One dispatch table for every egg trigger (WebSocket, keyboard, on-screen
+// colour buttons). Index = the "n" the firmware sends. 1 = force-jackpot,
+// kept OFF the public colour buttons (see firmware EGG_SEND).
+function triggerEgg(n) {
+  [eggParty, eggForceJackpot, eggCrowd, eggBoing, eggFart][n]?.();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2234,7 +2297,7 @@ function connectEsp32Ws() {
             setTimeout(() => (msg.coin || !cfg.requireCoin) ? onSpace() : onAhem(), 60);
             break;
           case 'egg':
-            [eggParty, eggForceJackpot, eggCrowd][msg.n]?.();
+            triggerEgg(msg.n);
             break;
         }
       } catch(_) {}
@@ -2680,8 +2743,10 @@ const SFX_DEFS = [
   { key: 'tripleWin', label: '🎉🎉 Three-of-a-kind fanfare' },
   { key: 'jackpot',   label: '⭐ Jackpot fanfare' },
   { key: 'nowin',     label: '😔 No-win sound (sad trombone)' },
-  { key: 'egg1',      label: '🎊 Secret button 1 (Q / ⭐) — airhorn' },
-  { key: 'egg2',      label: '🎊 Secret button 2 (E / 👥) — Muttley' },
+  { key: 'egg1',      label: '🔵 Blue button — party horn' },
+  { key: 'egg2',      label: '⚪ White button — crowd "ooh"' },
+  { key: 'egg3',      label: '🟢 Green button — boing' },
+  { key: 'egg4',      label: '🟡 Yellow button — raspberry' },
 ];
 
 let _sfxDb = null;
@@ -2904,15 +2969,12 @@ if (isTouchDevice) {
   // (The on-screen spin button uses only its click handler above — do not add
   // a pointerdown handler here; one tap would fire both.)
 
-  // Colour buttons — mirror the physical blue/white/green/yellow buttons.
-  // Fire the same egg sounds the firmware sends (party / crowd); no
-  // force-jackpot on the kid-facing bar.
+  // Colour buttons — mirror the physical blue/white/green/yellow buttons,
+  // same order, each its own sound (party / crowd / boing / raspberry).
   document.querySelectorAll('.mob-egg-btn').forEach(btn => {
     btn.addEventListener('pointerdown', () => {
       unlockPool();
-      const n = parseInt(btn.dataset.egg);
-      if (n === 0) eggParty();
-      else if (n === 2) eggCrowd();
+      triggerEgg(parseInt(btn.dataset.egg));
     });
   });
 }

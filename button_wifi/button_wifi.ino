@@ -33,28 +33,34 @@
  *   Every segment joint: 3 wires (5V, GND, DATA), DOUT→DIN direction.
  *   Set the NUM_ defines below to your real segment counts.
  *
- *   Power: data daisy-chains, power must NOT — run 5V/GND from the
- *   buck converter to each zone in parallel (default 126 LEDs ≈ 7.5 A
- *   theoretical full-white; real usage far less, but budget ≥4 A and
- *   keep LED_BRIGHT ≤ 160). 300-500 Ω series resistor on each of the
- *   4 data lines, 1000 µF cap across 5V/GND at the supply, common GND
- *   with the ESP32. GPIO 16 is unavailable on WROVER — WROOM only.
+ *   Power: everything runs from ONE USB power bank (5V). Data
+ *   daisy-chains, power must NOT — run 5V/GND from the bank to each
+ *   zone in parallel, straight from the bank (NOT through the ESP32
+ *   board). Budget ≥3 A and keep LED_BRIGHT ≤ 160 (216 reel LEDs at a
+ *   capped brightness ≈ 1.5-2 A typical). 300-500 Ω series resistor on
+ *   each data line, 1000 µF cap across 5V/GND, common GND with the
+ *   ESP32. GPIO 16 is unavailable on WROVER — WROOM only.
  *
  * ── Buttons (5 in a row: blue white green yellow red) ────────────
- *   Every switch wires GPIO -> GND (INPUT_PULLUP); pressed = LOW. The
- *   switches need NO power — two wires each. Lamps are 12 V via a
- *   driver (ULN2803, or a transistor per lamp) and are OPTIONAL; the
- *   buttons work unlit. Minimal build = wire the switches + red lamp.
- *     RED    (spin):  switch GPIO 19    lamp GPIO 23  (favoured flash)
- *     BLUE   (egg):   switch GPIO 33    lamp GPIO 25
- *     WHITE  (egg):   switch GPIO 21    lamp GPIO 26
- *     GREEN  (egg):   switch GPIO 22    lamp GPIO 27
- *     YELLOW (egg):   switch GPIO 32    lamp GPIO 17
- *   Red starts the spin (its lamp breathes "press me"); the four
- *   colours play funny sounds. The force-jackpot cheat is deliberately
- *   NOT on any public button (gamemaster keeps it on the keyboard).
+ *   See HARDWARE.md for the full wiring diagram + 38-pin pin-out.
+ *   Switch:  GPIO -> GND (INPUT_PULLUP), pressed = LOW. No power needed.
+ *   LED:     GPIO -> (built-in 220 Ω) -> LED -> GND, driven straight
+ *            from the pin at 3.3 V and PWM'd in software. The button's
+ *            LED module had its 742 Ω resistor swapped for 220 Ω so the
+ *            LED runs off 3.3 V — so NO 12 V, no MOSFET, no mains.
+ *     RED    (spin):  switch GPIO 19    LED GPIO 23  (favoured flash)
+ *     BLUE   (egg 0): switch GPIO 33    LED GPIO 25
+ *     WHITE  (egg 2): switch GPIO 21    LED GPIO 26
+ *     GREEN  (egg 3): switch GPIO 22    LED GPIO 27
+ *     YELLOW (egg 4): switch GPIO 32    LED GPIO 17
+ *   Red starts the spin (its LED breathes "press me"); the four colours
+ *   play party horn / crowd / boing / raspberry. The force-jackpot cheat
+ *   is deliberately NOT on any public button (kept on the keyboard).
  *   Coin slot abandoned. Keep switches off GPIO 34-39 (input-only, no
  *   pull-ups — they float). Onboard LED GPIO 2 = AP up / sync activity.
+ *   Note: blue/white LEDs (higher Vf) glow dimmer than red/yellow at
+ *   3.3 V — expected; software can only PWM the current the resistor
+ *   allows.
  *   On power-up, a self-test chases the button lamps then races a
  *   rainbow round the reel windows so you can see everything is alive.
  *
@@ -137,9 +143,11 @@ const int LED_PIN      = 2;    // onboard LED (AP up / sync activity)
 const int EGG_COUNT    = 4;
 const int EGG_SW[]     = {33, 21, 22, 32};   // blue / white / green / yellow switches
 const int EGG_LED[]    = {25, 26, 27, 17};   // their lamps (optional, 12 V via driver)
-// Which web-app egg each colour button fires: 0 = party horn, 2 = crowd
-// "ooh". NEVER 1 — that's the force-jackpot cheat, kept off public buttons.
-const int EGG_SEND[]   = {0, 2, 0, 2};
+// Which web-app egg each colour button fires:
+//   0 = party horn (blue), 2 = crowd "ooh" (white),
+//   3 = boing (green),      4 = raspberry (yellow).
+// NEVER 1 — that's the force-jackpot cheat, kept off public buttons.
+const int EGG_SEND[]   = {0, 2, 3, 4};
 
 const unsigned long BTN_DEBOUNCE_MS = 40;
 const unsigned long EGG_DEBOUNCE_MS = 200;
@@ -201,14 +209,17 @@ void updateLights() {
   switch (lightMode) {
 
     case LM_IDLE:
-      // Cabinet zones: slow rainbow. Reel borders: staggered gold breathing.
+      // Attract: cabinet slow rainbow, reel borders staggered gold breathing,
+      // all colour-button LEDs breathe in a left-to-right stagger. (Full-scale
+      // PWM because the 3.3V button LEDs are current-limited and run dim.)
       fill_rainbow(leds, CABINET_LEDS, gHue / 3, max(1, 256 / CABINET_LEDS));
       nscale8(leds, CABINET_LEDS, 90);
       for (int r = 0; r < 3; r++) {
         reelBorder(r, CRGB(255, 150, 0));
         reelScale(r, 30 + breathe(r * 500UL, 3000, 90));
-        btnBright(r, breathe(r * 700UL, 2400));
       }
+      for (int i = 0; i < EGG_COUNT; i++)
+        btnBright(i, breathe(i * 450UL, 2400, 255));
       break;
 
     case LM_COIN: {

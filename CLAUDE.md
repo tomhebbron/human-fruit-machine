@@ -367,9 +367,18 @@ bar):
 
 ## Hardware
 
-See the header of `button_wifi/button_wifi.ino` for the current pinout,
-library versions, and flash steps. Power: buck converter for the LED
-strips (50 LEDs at full white ≈ 3 A) with common ground to the ESP32.
+**Full wiring, GPIO allocation and a 38-pin pin-out live in
+`button_wifi/HARDWARE.md`.** Library versions and flash steps are in the
+header of `button_wifi/button_wifi.ino`.
+
+**Powered from ONE 5 V USB power bank — no mains, no 12 V.** The
+illuminated buttons' LED modules had their 742 Ω resistor swapped for
+220 Ω, so each LED runs off 3.3 V driven **directly from a GPIO** (PWM'd
+in software; not permanently lit). One output pin per button LED, one
+input pin per switch. The WS2812B strips take 5 V straight from the bank
+(not through the ESP32); common ground to everything; keep `LED_BRIGHT`
+≤ 160.
+
 Do NOT put inputs on GPIO 34-39 — those pins are input-only with no
 internal pull-ups (the old firmwares' egg switches on 35/36 floated and
 fired at random; that is why they moved to 33/21/22).
