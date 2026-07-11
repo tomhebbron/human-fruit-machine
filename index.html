@@ -498,21 +498,22 @@
     }
     #vol-fruits { font-size: 3rem; letter-spacing: 0.4rem; }
 
-    /* ── Easter egg buttons (mobile bar) ── */
-    #mob-eggs { display: flex; flex-direction: row; gap: 0.8rem; align-items: center; }
+    /* ── Colour buttons (mobile bar) — mirror the physical blue/white/
+         green/yellow buttons in the booth, in the same left-to-right order,
+         so a helper can trigger the same sounds from the iPad. ── */
+    #mob-eggs { display: flex; flex-direction: row; gap: 0.9rem; align-items: center; }
     .mob-egg-btn {
-      width: 48px; height: 48px; border-radius: 0.55rem;
-      border: 2px solid rgba(255,255,255,0.2);
-      background: rgba(255,255,255,0.07);
-      color: white; font-size: 1.2rem;
+      width: 46px; height: 46px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.35);
       cursor: pointer; touch-action: manipulation;
-      transition: transform 0.1s, background 0.1s;
-      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 0 rgba(0,0,0,0.45);
+      transition: transform 0.08s, box-shadow 0.08s;
     }
-    .mob-egg-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.18); }
-    .mob-egg-btn[data-egg="0"] { border-color: rgba(255,107,107,0.6); }
-    .mob-egg-btn[data-egg="1"] { border-color: rgba(255,215,0,0.6); }
-    .mob-egg-btn[data-egg="2"] { border-color: rgba(105,240,174,0.6); }
+    .mob-egg-btn:active { transform: translateY(3px) scale(0.96); box-shadow: 0 0 0 rgba(0,0,0,0.45); }
+    .mob-egg-btn.c-blue   { background: radial-gradient(circle at 35% 30%, #7cbcff, #1667c8); }
+    .mob-egg-btn.c-white  { background: radial-gradient(circle at 35% 30%, #ffffff, #c4c4c4); }
+    .mob-egg-btn.c-green  { background: radial-gradient(circle at 35% 30%, #7cf0a8, #17a94f); }
+    .mob-egg-btn.c-yellow { background: radial-gradient(circle at 35% 30%, #ffe680, #e0b400); }
 
     /* ── Party flash (Easter egg) ── */
     @keyframes party-hue { to { filter: hue-rotate(360deg) brightness(1.7); } }
@@ -627,12 +628,21 @@
       background: #0a0a0a;
       transition: border-color 0.2s, background 0.2s;
     }
-    .vol-col.now { border-color: #00e676; background: #03170c; }
+    @keyframes vol-now-pulse { from { background: #00e676; } to { background: #00ff88; } }
+    .vol-col.now {
+      border-color: #00ff88;
+      background: #00e676;                       /* whole tile floods green = REVEAL NOW */
+      box-shadow: 0 0 6vh rgba(0,230,118,0.75);
+      animation: vol-now-pulse 0.45s ease-in-out infinite alternate;
+    }
     .vc-who   { font-size: clamp(0.9rem, 2.2vw, 1.6rem); color: #777; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; }
     .vc-fruit { font-size: clamp(4rem, 17vw, 15rem); line-height: 1.1; }
     .vc-name  { font-size: clamp(1.2rem, 3.5vw, 2.6rem); font-weight: 900; color: #fff; text-transform: uppercase; min-height: 1.2em; }
     .vc-count { font-size: clamp(2rem, 7vw, 5rem); font-weight: 900; color: var(--gold); min-height: 1.2em; }
-    .vol-col.now .vc-count { color: #00e676; }
+    /* On reveal the tile is bright green — flip text dark so it stays readable. */
+    .vol-col.now .vc-who   { color: rgba(0,40,20,0.7); }
+    .vol-col.now .vc-name  { color: #002611; }
+    .vol-col.now .vc-count { color: #002611; }
     .vol-result { text-align: center; width: 100%; }
     .vol-result .vr-head { font-size: clamp(2.6rem, 11vw, 9rem); font-weight: 900; color: #fff; }
     .vol-result.win     .vr-head { color: #00e676; }
@@ -982,9 +992,10 @@
   <!-- ═══ MOBILE BAR — gamemaster easter-egg buttons only ═══ -->
   <div id="mobile-bar">
     <div id="mob-eggs">
-      <button class="mob-egg-btn" data-egg="0">⭐</button>
-      <button class="mob-egg-btn" data-egg="1">🎉</button>
-      <button class="mob-egg-btn" data-egg="2">👥</button>
+      <button class="mob-egg-btn c-blue"   data-egg="0" aria-label="Blue button"></button>
+      <button class="mob-egg-btn c-white"  data-egg="2" aria-label="White button"></button>
+      <button class="mob-egg-btn c-green"  data-egg="0" aria-label="Green button"></button>
+      <button class="mob-egg-btn c-yellow" data-egg="2" aria-label="Yellow button"></button>
     </div>
   </div>
 
@@ -1012,7 +1023,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-10.2';
+const VERSION = '2026-07-10.3';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -2893,14 +2904,15 @@ if (isTouchDevice) {
   // (The on-screen spin button uses only its click handler above — do not add
   // a pointerdown handler here; one tap would fire both.)
 
-  // Easter egg buttons (gamemaster use)
+  // Colour buttons — mirror the physical blue/white/green/yellow buttons.
+  // Fire the same egg sounds the firmware sends (party / crowd); no
+  // force-jackpot on the kid-facing bar.
   document.querySelectorAll('.mob-egg-btn').forEach(btn => {
     btn.addEventListener('pointerdown', () => {
       unlockPool();
-      const idx = parseInt(btn.dataset.egg);
-      if (idx === 0) eggParty();
-      else if (idx === 1) eggForceJackpot();
-      else if (idx === 2) eggCrowd();
+      const n = parseInt(btn.dataset.egg);
+      if (n === 0) eggParty();
+      else if (n === 2) eggCrowd();
     });
   });
 }
