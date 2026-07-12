@@ -96,6 +96,7 @@
 #include <FastLED.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <time.h>
 #include <math.h>
 
 // ── Sync config ───────────────────────────────────────────────────
@@ -362,6 +363,9 @@ void handlePageMessage(const uint8_t* data, size_t len) {
   } else if (!strcmp(t, "state")) {
     const char* s = doc["s"] | "";
     strlcpy(pageState, s, sizeof(pageState));
+
+  } else if (!strcmp(t, "clock")) {
+    setClockFromClient((uint32_t)(doc["epoch"] | 0));   // fallback time source
   }
 }
 
@@ -406,6 +410,38 @@ bool fetchToFile(WiFiClientSecure& client, const String& url, const String& path
 String gSyncResult = "sync not run yet";
 String gLastScan   = "not scanned yet";
 bool   gFsMounted  = false;
+
+// ── Clock ─────────────────────────────────────────────────────────
+// Time authority for the booth so the play log is stamped correctly even
+// when a client device (e.g. a dead-then-rebooted iPad) has a wrong clock.
+// Set from NTP while WiFi is up for the sync; otherwise the first client
+// with a plausible clock seeds it over the WebSocket ({"t":"clock"}).
+bool gHaveTime = false;   // true once we hold a real (post-2020) epoch
+
+// UTC epoch seconds now, or 0 if we've never obtained a real time.
+uint32_t nowEpoch() {
+  time_t t = time(nullptr);
+  return (t > 1600000000) ? (uint32_t)t : 0;
+}
+
+// Pull time from NTP (WiFi must be connected). ~3 s max, non-fatal on fail.
+void syncClock() {
+  if (gHaveTime) return;
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");   // UTC; client applies its own TZ
+  struct tm tm;
+  for (int i = 0; i < 20 && !gHaveTime; i++)
+    if (getLocalTime(&tm, 150) && nowEpoch()) gHaveTime = true;
+  Serial.println(gHaveTime ? "Clock: set from NTP." : "Clock: NTP unavailable (will take client time).");
+}
+
+// Seed the clock from a client's epoch when we have no better source.
+void setClockFromClient(uint32_t epoch) {
+  if (gHaveTime || epoch <= 1600000000UL) return;
+  struct timeval tv = { (time_t)epoch, 0 };
+  settimeofday(&tv, nullptr);
+  gHaveTime = true;
+  Serial.printf("Clock: seeded from client (%lu).\n", (unsigned long)epoch);
+}
 
 // ── WiFi credentials in NVS (set via http://192.168.4.1/wifi) ────
 Preferences   prefs;
@@ -501,6 +537,7 @@ void syncFromPages() {
   }
   String joined = WiFi.SSID();
   Serial.printf("Sync: connected to %s, IP %s\n", joined.c_str(), WiFi.localIP().toString().c_str());
+  syncClock();   // grab NTP time while we have internet
 
   WiFiClientSecure client;
   client.setInsecure();   // public static assets; integrity risk accepted
@@ -551,6 +588,7 @@ String buildStatus() {
   s += "\nWiFi for sync (set at /wifi, stored in NVS):\n";
   s += "  HOME : " + (gHomeSsid.length()  ? gHomeSsid  : String("(not set)")) + "\n";
   s += "  PHONE: " + (gPhoneSsid.length() ? gPhoneSsid : String("(not set)")) + "\n\n";
+  s += "Clock: " + String(gHaveTime ? "set (epoch " + String(nowEpoch()) + " UTC)" : "NOT set") + "\n";
   s += "Last sync: " + gSyncResult + "\n\n";
   s += "Networks seen at boot (2.4GHz only are joinable):\n" + gLastScan + "\n";
   s += "Set/change WiFi: http://192.168.4.1/wifi  (then it reboots and re-syncs)\n";
@@ -648,6 +686,11 @@ void setup() {
   // Diagnostics page — always available, even once the game is loaded.
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest* req) {
     req->send(200, "text/plain", buildStatus());
+  });
+  // Clock: the page reads this to correct its log timestamps.
+  server.on("/time", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send(200, "application/json",
+      "{\"epoch\":" + String(nowEpoch()) + ",\"valid\":" + (gHaveTime ? "true" : "false") + "}");
   });
   // WiFi setup — enter the sync network(s); saved to NVS; reboots to re-sync.
   server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest* req) {

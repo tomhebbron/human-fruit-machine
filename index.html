@@ -1030,7 +1030,7 @@
 <script>
 'use strict';
 
-const VERSION = '2026-07-10.5';
+const VERSION = '2026-07-12.1';
 
 // ═══════════════════════════════════════════════════════════════
 //  FRUITS
@@ -1197,7 +1197,7 @@ function loadHistory() {
 
 function appendPlay(entry) {
   const h = loadHistory();
-  h.push({ ...entry, ts: Date.now() });
+  h.push({ ...entry, ts: nowMs() });
   const trimmed = h.slice(-1000);
   localStorage.setItem('hfm_hist', JSON.stringify(trimmed));
   return trimmed;
@@ -2266,6 +2266,23 @@ const ESP32_WS_URL = window.location.protocol === 'http:'
 let _ws          = null;
 let _wsConnected = false;
 
+// Clock: prefer the ESP32's time (NTP-synced at boot) so the play log is
+// stamped correctly even if THIS device's clock is wrong (e.g. an old iPad
+// whose battery died). clockOffsetMs = authoritative time − this device's.
+let clockOffsetMs = 0;
+function nowMs() { return Date.now() + clockOffsetMs; }
+
+function syncClockWithEsp32() {
+  if (!ESP32_WS_URL) return;   // on GitHub Pages we just trust the device clock
+  fetch('/time').then(r => r.json()).then(d => {
+    if (d && d.valid && d.epoch > 1600000000) {
+      clockOffsetMs = d.epoch * 1000 - Date.now();          // trust ESP32 (NTP)
+    } else {
+      sendToEsp32({ t: 'clock', epoch: Math.floor(Date.now() / 1000) }); // seed it from us
+    }
+  }).catch(() => {});
+}
+
 function _wsSetDot(on) {
   const dot = document.getElementById('ws-dot');
   if (!ESP32_WS_URL) return;
@@ -2279,7 +2296,7 @@ function connectEsp32Ws() {
   if (!ESP32_WS_URL) return;
   try {
     _ws = new WebSocket(ESP32_WS_URL);
-    _ws.onopen  = () => { _wsConnected = true;  _wsSetDot(true);  };
+    _ws.onopen  = () => { _wsConnected = true;  _wsSetDot(true);  syncClockWithEsp32(); };
     _ws.onclose = () => { _wsConnected = false; _wsSetDot(false); setTimeout(connectEsp32Ws, 2000); };
     _ws.onerror = () => _ws.close();
     _ws.onmessage = e => {
@@ -2445,7 +2462,7 @@ function buildLog() {
   document.getElementById('history-title').textContent = 'Play Log (' + history.length + ' total)';
   document.getElementById('log-body').innerHTML = recent.map(h => {
     const cls   = h.type === 'jackpot' ? 'jackpot' : h.won ? 'won' : 'lost';
-    const time  = new Date(h.ts).toLocaleTimeString();
+    const time  = new Date(h.ts).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const reels = Array.isArray(h.reels) ? h.reels.join('  |  ') : h.reels;
     const badge = { jackpot:'⭐ Jackpot!', three:'🎰 3-of-a-kind', two:'🎉 Pair', none:'—' }[h.type] || h.type;
     return `<tr class="${cls}"><td>${time}</td><td>${reels}</td><td>${badge}</td></tr>`;
